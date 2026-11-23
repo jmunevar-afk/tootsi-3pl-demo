@@ -67,7 +67,7 @@ function toRow_(name, o) {
     if (v === undefined || v === null) return '';
     // keep PO numbers, lots, tokens and dates as text so Sheets doesn't reformat them
     // a leading apostrophe tells Sheets "keep as text" (PO 41499-1, lot 0042, dates stay exactly as typed)
-    if (typeof v === 'string' && v !== '' && /^(id|po|item|lot|token|eta|clockFrom|recv|exp|qcAt|relAt|sap|newDate|date|opened|nudged|from|cntr|so|key|value)$/.test(c)) return "'" + v;
+    if (typeof v === 'string' && v !== '' && /^(id|po|item|lot|token|user|salt|passHash|sid|subId|delayId|eta|clockFrom|recv|exp|qcAt|relAt|sap|newDate|date|opened|nudged|from|cntr|so|key|value)$/.test(c)) return "'" + v;
     return v;
   });
 }
@@ -120,7 +120,7 @@ function config_() {
 
 /** Save an uploaded file (base64) into Drive: <root>/<PO id>/<name>. Returns {name,url,fileId}. */
 function saveFile_(id, f) {
-  var root = DriveApp.getFolderById(PropertiesService.getScriptProperties().getProperty('ROOT_FOLDER_ID'));
+  var root = DriveApp.getFolderById(PropertiesService.getScriptProperties().getProperty('ROOT_FOLDER_ID') || config_().ROOT_FOLDER_ID);
   var folderName = String(id).replace(/\|/g, ' · ');
   var it = root.getFoldersByName(folderName);
   var folder = it.hasNext() ? it.next() : root.createFolder(folderName);

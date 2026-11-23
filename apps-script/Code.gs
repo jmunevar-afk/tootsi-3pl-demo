@@ -16,20 +16,26 @@ function doGet(e) {
   if (view !== '3pl') {
     try {
       hubUser_();
-      return HtmlService.createTemplateFromFile('Hub').evaluate().setTitle('Tootsi · PO Hub').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+      return tpl_('Hub').evaluate().setTitle('Tootsi · PO Hub').addMetaTag('viewport', 'width=device-width, initial-scale=1');
     } catch (err) { /* not a Tootsi Google account: show the 3PL sign-in page */ }
   }
   // 3PL partners: the page opens on the sign-in screen (username + password from the Users tab).
-  var t = HtmlService.createTemplateFromFile('Portal');
+  var t = tpl_('Portal');
   t.lang = 'fr'; t.hubUrl = String(config_().HUB_URL || '');
   return t.evaluate().setTitle('Tootsi · 3PL Portal').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function page_(name, vars) {
-  var t = HtmlService.createTemplateFromFile(name);
+  var t = tpl_(name);
   Object.keys(vars || {}).forEach(function (k) { t[k] = vars[k]; });
   return t.evaluate().setTitle('Tootsi PO Hub').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 /** Used inside HTML templates: <?!= include('Styles') ?> */
-function include(name) { return HtmlService.createHtmlOutputFromFile(name).getContent(); }
+function include(name) {
+  return typeof HTML_FILES !== 'undefined' ? HTML_FILES[name] : HtmlService.createHtmlOutputFromFile(name).getContent();
+}
+/** The one-file install (PO_Hub.gs) carries the pages inside HTML_FILES. The multi-file install uses the .html files. */
+function tpl_(name) {
+  return typeof HTML_FILES !== 'undefined' ? HtmlService.createTemplate(HTML_FILES[name]) : HtmlService.createTemplateFromFile(name);
+}

@@ -19,6 +19,8 @@ function setup() {
   var s1 = ss.getSheetByName('Sheet1'); if (s1 && ss.getSheets().length > 1) ss.deleteSheet(s1);
 
   var props = PropertiesService.getScriptProperties();
+  var cfgFolder = config_().ROOT_FOLDER_ID;          // folder created ahead of time (Config tab)
+  if (cfgFolder && !props.getProperty('ROOT_FOLDER_ID')) props.setProperty('ROOT_FOLDER_ID', String(cfgFolder));
   if (!props.getProperty('ROOT_FOLDER_ID')) {
     var parent = DriveApp.getFileById(ss.getId()).getParents();
     var folder = (parent.hasNext() ? parent.next() : DriveApp.getRootFolder()).createFolder('PO Hub files');
