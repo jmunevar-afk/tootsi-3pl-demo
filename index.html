@@ -81,6 +81,31 @@ tr[data-po]:hover td{background:#fdf6f7}
 td{padding:11px 14px;border-bottom:1px solid #f0f0ed;font-size:13px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .2s;z-index:20}
 .toast.show{opacity:1}
+
+.p-warn{background:var(--amber-soft);color:var(--amber)}.p-grey{background:#efefec;color:#5e6368}.a-prod{background:#f0e7f7;color:#6b3a91}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{font:inherit;font-size:12.5px;border:1px solid var(--line);background:#fff;padding:7px 12px;border-radius:20px;cursor:pointer}
+.chips button:hover{border-color:var(--ink)}.chips button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.tag{font-size:10px;background:var(--grey,#efefec);color:var(--muted);padding:2px 7px;border-radius:10px;text-transform:none;letter-spacing:0;font-weight:500;margin-left:6px}
+.card{border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.issue{border:1px solid #f3b9c2;background:#fdf6f7;border-radius:12px;padding:14px 16px;color:#7a1b2b}
+.issue.closed{border-color:#bfe0cc;background:#fafdfb;color:var(--green)}
+.issue label,.card label,.step label,form label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
+.check{display:flex!important;gap:8px;align-items:center;font-size:12.5px;color:var(--ink)!important}
+.msg{border-left:3px solid var(--line);padding:6px 10px;margin-bottom:8px;font-size:13px}.msg span{font-size:11.5px;color:var(--muted)}
+.bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.bar #q{flex:1;min-width:240px;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;outline:none;box-shadow:var(--shadow)}
+.bar #q:focus{border-color:var(--red)}
+.tw{overflow:auto;border-radius:12px;box-shadow:var(--shadow)}
+.tw table{box-shadow:none}
+tr[data-po]{cursor:pointer}tr[data-po]:hover td{background:#fdf6f7}
+.hint{font-size:12px;color:var(--muted);margin:6px 0 0}
+.timeline{list-style:none;padding:0;margin:0}
+.timeline li{display:flex;gap:12px;padding:7px 0;font-size:13px;position:relative}
+.timeline li:not(:last-child)::after{content:"";position:absolute;left:6px;top:22px;bottom:-8px;width:2px;background:var(--line)}
+.dot{width:14px;height:14px;border-radius:50%;margin-top:2px;flex:none;border:2px solid #d5d5d0;background:#fff;z-index:1}
+.dot.done{background:var(--green);border-color:var(--green)}.dot.now{border-color:var(--red);box-shadow:0 0 0 4px var(--red-soft)}
+.timeline .when{color:var(--muted);margin-left:auto;font-size:12px;text-align:right}
 @media(max-width:640px){.po{grid-template-columns:1fr}.row2{grid-template-columns:1fr}header .div,header .sub{display:none}}
 </style>
 </head>
@@ -97,39 +122,60 @@ td{padding:11px 14px;border-bottom:1px solid #f0f0ed;font-size:13px}
 <aside class="drawer" id="drawer"></aside>
 <div class="toast" id="toast"></div>
 <script>
-// ====== Tootsi 3PL Portal demo. Fake data only. ======
+// ====== Tootsi PO Hub + 3PL Portal demo. Fake data only. ======
 // In the real app the server sends a 3PL ONLY its own POs and ONLY the allow-listed fields.
+const TODAY="2026-11-23";
+const TPL=["TP","DL"], OWN=["BM","LY","HB"], WHS=[...TPL,...OWN];
+const isTPL=w=>TPL.includes(w);
 const POS=[
- {po:"90101",wh:"TP",item:"10201",desc:"RAW WHOLE CASHEWS (W-320)",eta:"2026-11-24",cntr:"DEMO1234567",plt:28,cs:1100,lbs:55000,load:"FCL 40' · Floor loaded",supplier:"Supplier A",_private:{stock:426062,alloc:"Production",note:"High demand"}},
- {po:"90102",wh:"TP",item:"20087",desc:"NATURAL COCOA POWDER 10-12% FAT",eta:"2026-11-25",cntr:"DEMO2345678",plt:20,cs:400,lbs:22048,load:"FCL 40' · Palletized",supplier:"Supplier B",_private:{stock:74161,alloc:"Split"}},
- {po:"90103",wh:"TP",item:"11388",desc:"BRAZIL NUTS (MIDGET)",eta:"2026-11-26",cntr:"DEMO3456789",plt:20,cs:1200,lbs:52920,load:"FCL 40' · Palletized",supplier:"Supplier C",_private:{}},
- {po:"90104",wh:"TP",item:"30096",desc:"ORGANIC WHOLE OAT GROATS",eta:"2026-11-28",cntr:"",plt:22,cs:1000,lbs:25000,load:"FTL · Palletized",supplier:"Supplier D",_private:{}},
- {po:"90201",wh:"DL",item:"10402",desc:"CALIFORNIA WALNUT 1/2 & PIECES",eta:"2026-11-24",cntr:"",plt:20,cs:1600,lbs:40000,load:"FTL · Palletized",supplier:"Supplier E",_private:{stock:58011,alloc:"Sales"}},
- {po:"90202",wh:"DL",item:"10611",desc:"BLANCHED REGULAR SLICED ALMONDS",eta:"2026-11-25",cntr:"",plt:20,cs:1600,lbs:40000,load:"FTL · Palletized",supplier:"Supplier F",_private:{}},
- {po:"90203",wh:"DL",item:"14015",desc:"SULTANA RAISINS (TURKEY)",eta:"2026-11-27",cntr:"DEMO4567890",plt:20,cs:1600,lbs:44096,load:"FCL 20' · Floor loaded",supplier:"Supplier G",_private:{}},
+ {po:"90101",wh:"TP",item:"10201",desc:"RAW WHOLE CASHEWS (W-320)",eta:"2026-11-24",cntr:"DEMO1234567",plt:28,cs:1100,lbs:55000,load:"FCL 40' · Floor loaded",supplier:"Supplier A"},
+ {po:"90102",wh:"TP",item:"20087",desc:"NATURAL COCOA POWDER 10-12% FAT",eta:"2026-11-25",cntr:"DEMO2345678",plt:20,cs:400,lbs:22048,load:"FCL 40' · Palletized",supplier:"Supplier B"},
+ {po:"90103",wh:"TP",item:"11388",desc:"BRAZIL NUTS (MIDGET)",eta:"2026-11-26",cntr:"DEMO3456789",plt:20,cs:1200,lbs:52920,load:"FCL 40' · Palletized",supplier:"Supplier C"},
+ {po:"90104",wh:"TP",item:"30096",desc:"ORGANIC WHOLE OAT GROATS",eta:"2026-11-28",cntr:"",plt:22,cs:1000,lbs:25000,load:"FTL · Palletized",supplier:"Supplier D"},
+ {po:"90201",wh:"DL",item:"10402",desc:"CALIFORNIA WALNUT 1/2 & PIECES",eta:"2026-11-24",cntr:"",plt:20,cs:1600,lbs:40000,load:"FTL · Palletized",supplier:"Supplier E"},
+ {po:"90202",wh:"DL",item:"10611",desc:"BLANCHED REGULAR SLICED ALMONDS",eta:"2026-11-25",cntr:"",plt:20,cs:1600,lbs:40000,load:"FTL · Palletized",supplier:"Supplier F"},
+ {po:"90203",wh:"DL",item:"14015",desc:"SULTANA RAISINS (TURKEY)",eta:"2026-11-27",cntr:"DEMO4567890",plt:20,cs:1600,lbs:44096,load:"FCL 20' · Floor loaded",supplier:"Supplier G"},
+ {po:"90301",wh:"BM",item:"10501",desc:"FANCY JUMBO PECAN HALVES",eta:"2026-11-23",cntr:"",plt:22,cs:1680,lbs:41580,load:"FTL · Palletized",supplier:"Supplier H"},
+ {po:"90302",wh:"LY",item:"34012",desc:"ORGANIC 70% DARK CHOCOLATE WAFERS",eta:"2026-11-25",cntr:"DEMO5678901",plt:8,cs:400,lbs:8000,load:"FCL 40' · Palletized",supplier:"Supplier I"},
+ {po:"90303",wh:"HB",item:"10319",desc:"RAW CALIFORNIA PISTACHIO KERNELS",eta:"2026-12-02",cntr:"",plt:19,cs:1330,lbs:39900,load:"FTL · Palletized",supplier:"Supplier J"},
 ];
-// Packing list quantities entered by Purchasing (internal only)
-const PL={"90201":{plt:20,cs:1600,lbs:40000,by:"Purchasing"},"90203":{plt:20,cs:1600,lbs:44096,by:"Purchasing"}};
-// 3PL submissions
-const SUB={"90203":{by:"DL receiver",at:"Nov 22, 2026 14:10",recv:"2026-11-22",plt:20,cs:1580,lbs:43545,first:{plt:20,cs:1578,lbs:43490},recount:true,diffNote:"Recounted twice. 20 cases missing, 2 bags torn on pallet 7.",label:[],doc:[],damage:true,dmgText:"2 bags torn on bottom of pallet 7, product spilled.",dmgPics:[],demo:true}};
-const INT={"90201":[{cat:"Supplier packing list",name:"packing_list_90201.pdf",type:"application/pdf",by:"Purchasing",at:"Nov 20, 2026"}],
- "90203":[{cat:"Supplier packing list",name:"packing_list_90203.pdf",type:"application/pdf",by:"Purchasing",at:"Nov 18, 2026"},{cat:"Supplier loading report",name:"loading_report_90203.pdf",type:"application/pdf",by:"Purchasing",at:"Nov 21, 2026"}]};
+// Internal-only info. Never sent to a 3PL.
+const EXTRA={
+ "90101":{instr:"FOR PRODUCTION ONLY. Palletized, max 1 tier high, stretch-wrapped. Double-stacked loads or torn bags will be refused.",alloc:"Production",so:"",qc:"Not received",stock:426062},
+ "90102":{instr:"200 cs for production, 200 cs for sales order SO 118377.",alloc:"Split",prodQty:200,salesQty:200,so:"SO 118377",qc:"Not received",stock:74161},
+ "90103":{instr:"For sales. Contract with customer.",alloc:"Sales",so:"SO 118402",qc:"Not received"},
+ "90201":{instr:"For sales and production. Stretch-wrap every pallet.",alloc:"",so:"",qc:"Not received",stock:58011},
+ "90203":{instr:"For production. Bags must be double-stitched. Floor-loaded: bags no more than 10 high.",alloc:"Production",so:"",qc:"Locked"},
+ "90301":{instr:"For sales. Back order for customer.",alloc:"Sales",so:"SO 118455",qc:"Not received",stock:16712},
+ "90302":{instr:"",alloc:"",so:"",qc:"Not received"},
+};
+POS.forEach(p=>{p.x=Object.assign({instr:"",alloc:"",so:"",qc:"Not received",prodQty:"",salesQty:""},EXTRA[p.po]||{})});
+// Every issue has an owner team and an age, so nothing waits in someone's inbox. Fatima is CC'd on all.
+const ISSUES={"90203":{type:"Short ship + damage",owner:"Purchasing",status:"Open",opened:"2026-11-22"}};
+const NOTES={"90203":[{who:"Purchasing",text:"Sent photos and counts to supplier. Waiting for their loading report.",at:"Nov 22, 2026 16:02"},{who:"QC",text:"Lot locked until the claim is decided.",at:"Nov 23, 2026 08:15"}]};
+const REQ={}; // recount requests from Tootsi to the 3PL
+const PL={"90201":{plt:20,cs:1600,lbs:40000,by:"Purchasing"},"90203":{plt:20,cs:1600,lbs:44096,by:"Purchasing"},"90301":{plt:22,cs:1680,lbs:41580,by:"Purchasing"}};
+const SUB={"90203":{by:"DL receiver",at:"Nov 22, 2026 14:10",recv:"2026-11-22",plt:20,cs:1580,lbs:43545,first:{plt:20,cs:1578,lbs:43490},recount:true,diffNote:"Recounted twice. 20 cases missing.",label:[],doc:[],loadPics:[],cond:"Torn / leaking bags",damage:true,dmgText:"2 bags torn on bottom of pallet 7, product spilled.",dmgPics:[],demo:true}};
+const INT={"90201":[{cat:"Supplier packing list",name:"packing_list_90201.pdf",by:"Purchasing",at:"Nov 20, 2026"}],
+ "90203":[{cat:"Supplier packing list",name:"packing_list_90203.pdf",by:"Purchasing",at:"Nov 18, 2026"},{cat:"Supplier loading report",name:"loading_report_90203.pdf",by:"Purchasing",at:"Nov 21, 2026"}],
+ "90301":[{cat:"Supplier packing list",name:"packing_list_90301.pdf",by:"Purchasing",at:"Nov 21, 2026"}]};
 const CATS=["Supplier packing list","Supplier loading report","Bill of lading","Certificate of analysis","QC report","NCR / claim","Photos","Other"];
-const TEAMS=["Juan (Inventory Control)","Purchasing","Fulfillment","QC","Logistics","Receiving"];
-const ROLES={DL:{name:"DL receiver",org:"Deslauriers (DL)",av:"DL"},TP:{name:"TP receiver",org:"Trans-Plus (TP)",av:"TP"},TOOTSI:{name:"Juan",org:"Tootsi Impex",av:"JM"}};
-const LBS_TOL=0.01; // 1% weight tolerance (scale differences)
-let role="TP",tab="todo",intCat=CATS[0],intWho=TEAMS[0];
+const TEAMS=["Juan (Inventory Control)","Purchasing","Fulfillment","QC","Logistics","Receiving","Production","Sales"];
+const OWNERS=["Purchasing","Logistics","QC","Receiving","Inventory Control","Fulfillment"];
+const CONDS=["Good","Shifted load","Collapsed pallets","Double-stacked","Torn / leaking bags","Wet / dirty","Other"];
+const ROLES={TOOTSI:{name:"Juan",org:"Tootsi Impex",av:"JM"},DL:{name:"DL receiver",org:"Deslauriers (DL)",av:"DL"},TP:{name:"TP receiver",org:"Trans-Plus (TP)",av:"TP"}};
+const LBS_TOL=0.01;
+let role="TOOTSI",tab="todo",intCat=CATS[0],intWho=TEAMS[0],whF="",issF=false,q="";
 
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fd=d=>d?new Date(d+"T12:00").toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"}):"—";
 const num=v=>v===""||v==null?null:+v;
-const fmt=n=>n==null?"—":(+n).toLocaleString();
+const fmt=n=>n==null||n===""?"—":(+n).toLocaleString();
 const now=()=>new Date().toLocaleString("en-CA",{month:"short",day:"numeric",year:"numeric",hour:"2-digit",minute:"2-digit"});
-function toast(t){$("toast").textContent=t;$("toast").classList.add("show");clearTimeout(toast.t);toast.t=setTimeout(()=>$("toast").classList.remove("show"),2800)}
-// Fields a 3PL may see. Expected cases and lbs are NOT sent: the 3PL counts blind, the system compares.
-const view3pl=p=>({po:p.po,item:p.item,desc:p.desc,eta:p.eta,cntr:p.cntr,plt:p.plt,load:p.load});
-// Compare a count against expected. Returns list of mismatched fields.
+const ageDays=d=>Math.max(0,Math.round((new Date(TODAY+"T12:00")-new Date(d+"T12:00"))/864e5));
+function toast(t){$("toast").textContent=t;$("toast").classList.add("show");clearTimeout(toast.t);toast.t=setTimeout(()=>$("toast").classList.remove("show"),3000)}
+const view3pl=p=>({po:p.po,item:p.item,desc:p.desc,eta:p.eta,cntr:p.cntr,plt:p.plt,load:p.load,wh:p.wh});
 function diffs(exp,got){
  const d=[];if(!exp||!got)return d;
  if(exp.plt!=null&&got.plt!=null&&+got.plt!==+exp.plt)d.push("pallets");
@@ -141,14 +187,30 @@ function closeD(){$("drawer").classList.remove("open");$("scrim").classList.remo
 function openD(html){$("drawer").innerHTML=html;$("drawer").scrollTop=0;$("drawer").classList.add("open");$("scrim").classList.add("open");const x=$("x");if(x)x.onclick=closeD}
 $("scrim").onclick=closeD;document.addEventListener("keydown",e=>{if(e.key==="Escape")closeD()});
 
+// Open an issue automatically when quantities or condition do not match
+function syncIssues(){
+ POS.forEach(p=>{
+  const s=SUB[p.po],pl=PL[p.po];
+  const types=[];
+  if(pl&&diffs(p,pl).length)types.push("Packing list ≠ PO");
+  if(s&&diffs(p,s).length)types.push("Short / over ship");
+  if(s?.damage)types.push("Damage");
+  if(types.length&&!ISSUES[p.po])ISSUES[p.po]={type:types.join(" + "),owner:"Purchasing",status:"Open",opened:TODAY};
+  else if(ISSUES[p.po]&&types.length)ISSUES[p.po].type=types.join(" + ");
+ });
+}
+const openIssue=p=>ISSUES[p.po]&&ISSUES[p.po].status==="Open"?ISSUES[p.po]:null;
+const allocPill=x=>x.alloc?`<span class="pill ${x.alloc==="Production"?"a-prod":x.alloc==="Sales"?"p-done":"p-todo"}">${x.alloc}${x.alloc==="Split"&&x.prodQty?` ${x.prodQty}/${x.salesQty}`:""}</span>`:`<span class="pill p-dmg">Not set</span>`;
+const qcPill=v=>`<span class="pill ${v==="Locked"?"p-warn":v==="Released"?"p-done":"p-grey"}">QC: ${v}</span>`;
+
 function renderRoles(){
  $("roles").innerHTML=Object.keys(ROLES).map(r=>`<button data-r="${r}" class="${r===role?"on":""}">${r==="TOOTSI"?"Tootsi (internal)":r+" user"}</button>`).join(" ");
  document.querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{role=b.dataset.r;tab="todo";closeD();render()});
  const u=ROLES[role];$("uname").textContent=u.name;$("uorg").textContent=u.org;$("av").textContent=u.av;
- $("ttl").innerHTML=role==="TOOTSI"?'3PL <span>Receiving</span>':'3PL <span>Portal</span>';
- $("sub").textContent=role==="TOOTSI"?"All POs, documents and 3PL uploads":"Upcoming Tootsi deliveries to your warehouse";
+ $("ttl").innerHTML=role==="TOOTSI"?'PO <span>Hub</span>':'3PL <span>Portal</span>';
+ $("sub").textContent=role==="TOOTSI"?"Every PO, every document, every department":"Upcoming Tootsi deliveries to your warehouse";
 }
-function render(){renderRoles();role==="TOOTSI"?renderTootsi():render3pl()}
+function render(){syncIssues();renderRoles();role==="TOOTSI"?renderTootsi():render3pl()}
 
 // ================= 3PL VIEW =================
 function render3pl(){
@@ -156,34 +218,34 @@ function render3pl(){
  const todo=mine.filter(p=>!SUB[p.po]),done=mine.filter(p=>SUB[p.po]);
  const list=tab==="todo"?todo:done;
  $("main").innerHTML=`
- <div class="hello"><h2>Hi ${ROLES[role].name}</h2><p>Here are the Tootsi deliveries coming to ${role}. When a load arrives, open it, count it, and send us the label photo and receiving document.</p></div>
+ <div class="hello"><h2>Hi ${ROLES[role].name}</h2><p>Here are the Tootsi deliveries coming to ${role}. When a load arrives: photo the load before unloading, count it, and send us the label photo and receiving document.</p></div>
  <div class="kpis">
   <div class="kpi"><div class="n">${todo.filter(p=>p.eta<="2026-11-24").length}</div><div class="l">Arriving today or tomorrow</div></div>
   <div class="kpi"><div class="n">${todo.length}</div><div class="l">Waiting for your receiving info</div></div>
-  <div class="kpi"><div class="n">${done.length}</div><div class="l">Sent to Tootsi</div></div>
+  <div class="kpi" style="${todo.some(p=>REQ[p.po])?"border-color:var(--amber)":""}"><div class="n">${todo.filter(p=>REQ[p.po]).length}</div><div class="l">Recounts Tootsi asked for</div></div>
  </div>
  <div class="tabs"><button data-t="todo" class="${tab==="todo"?"on":""}">To receive (${todo.length})</button><button data-t="done" class="${tab==="done"?"on":""}">Sent (${done.length})</button></div>
  <div class="list">${list.length?list.map(p=>`
-  <div class="po" data-po="${p.po}">
+  <div class="po" data-po="${p.po}" style="${REQ[p.po]?"border-color:var(--amber)":""}">
    <div class="date">Expected<b>${fd(p.eta)}</b></div>
    <div><div class="t"><span class="mono">PO ${p.po}</span> · ${esc(p.desc)}</div><div class="m">Item ${p.item} · ${p.plt} pallets · ${esc(p.load)}${p.cntr?" · "+p.cntr:""}</div></div>
-   <div>${SUB[p.po]?(SUB[p.po].damage?'<span class="pill p-dmg">Sent · issue</span>':'<span class="pill p-done">Sent</span>'):'<button class="btn">Receive</button>'}</div>
+   <div>${SUB[p.po]?(SUB[p.po].damage?'<span class="pill p-dmg">Sent · issue</span>':'<span class="pill p-done">Sent</span>'):REQ[p.po]?'<span class="pill p-warn">Recount requested</span>':'<button class="btn">Receive</button>'}</div>
   </div>`).join(""):`<div class="note">Nothing here.</div>`}</div>`;
  document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()});
  document.querySelectorAll(".po").forEach(el=>el.onclick=()=>openReceive(el.dataset.po));
 }
 
+// ================= RECEIVING FORM (3PL, or Tootsi receiving at BM/LY/HB) =================
 let form;
 function openReceive(po){
  const s=SUB[po];
- form=s?JSON.parse(JSON.stringify({...s,label:[],doc:[],dmgPics:[]})):{recv:"2026-11-23",plt:"",cs:"",lbs:"",label:[],doc:[],damage:null,dmgText:"",dmgPics:[],legible:false,recount:false,rplt:"",rcs:"",rlbs:"",diffNote:""};
- if(s){form.label=s.label;form.doc=s.doc;form.dmgPics=s.dmgPics}
+ form=s?{...s,legible:true}:{recv:TODAY,plt:"",cs:"",lbs:"",label:[],doc:[],loadPics:[],cond:"",dmgText:"",dmgPics:[],legible:false,rplt:"",rcs:"",rlbs:"",diffNote:""};
  drawReceive(po,!!s);
 }
 function thumbs(arr){return `<div class="thumbs">${arr.map(f=>f.type?.startsWith("image")?`<img src="${f.url}" alt="">`:`<div class="file">📄 ${esc(f.name)}</div>`).join("")}</div>`}
 function drawReceive(po,ro){
- const full=POS.find(x=>x.po===po),p=view3pl(full);
- // The comparison uses expected numbers the 3PL never sees.
+ const full=POS.find(x=>x.po===po),p=view3pl(full),s=SUB[po],rq=REQ[po];
+ const who=isTPL(p.wh)?"Tootsi":"Inventory Control";
  const first={plt:num(form.plt),cs:num(form.cs),lbs:num(form.lbs)};
  const okQty=form.recv&&first.plt!=null&&first.cs!=null&&first.lbs!=null;
  const firstDiff=okQty?diffs(full,first):[];
@@ -191,208 +253,324 @@ function drawReceive(po,ro){
  const re={plt:num(form.rplt),cs:num(form.rcs),lbs:num(form.rlbs)};
  const okRe=!needRecount||(re.plt!=null&&re.cs!=null&&re.lbs!=null);
  const reDiff=needRecount&&okRe?diffs(full,re):[];
- const needNote=reDiff.length>0;
- const okNote=!needNote||form.diffNote.trim().length>=10;
+ const needNote=reDiff.length>0, okNote=!needNote||form.diffNote.trim().length>=10;
  const okLabel=form.label.length&&form.legible, okDoc=form.doc.length;
- const okDmg=form.damage===false||(form.damage===true&&form.dmgText.trim().length>=10&&form.dmgPics.length);
- const ready=okQty&&okRe&&okNote&&okLabel&&okDoc&&okDmg;
+ const bad=form.cond&&form.cond!=="Good";
+ const okCond=form.loadPics.length&&form.cond&&(!bad||(form.dmgText.trim().length>=10&&form.dmgPics.length));
+ const ready=okQty&&okRe&&okNote&&okLabel&&okDoc&&okCond;
  const dis=ro?"disabled":"";
- const s=SUB[po];
+ const n=(i)=>`<span class="num">${i}</span>`;
  openD(`
- <div class="dh"><button class="close" id="x">×</button><div style="color:var(--muted);font-size:12px">Receiving for Tootsi</div><h2 class="mono">PO ${p.po}</h2><div>${p.item} · ${esc(p.desc)}</div></div>
+ <div class="dh"><button class="close" id="x">×</button><div style="color:var(--muted);font-size:12px">${isTPL(p.wh)?"Receiving for Tootsi":"Tootsi receiving · "+p.wh}</div><h2 class="mono">PO ${p.po}</h2><div>${p.item} · ${esc(p.desc)}</div></div>
  <div class="db">
+  ${rq&&!ro?`<div class="sec"><div class="note" style="background:var(--amber-soft);color:#6d4a10"><b>Tootsi asked for a recount</b> (${esc(rq.at)}). Your earlier count did not match. Please count the full load again.</div></div>`:""}
   <div class="sec"><h3>Delivery details</h3><div class="grid2">
    <span class="k">Expected</span><span>${fd(p.eta)}</span>
    <span class="k">Pallets expected</span><span>${p.plt}</span>
    <span class="k">Shipment</span><span>${esc(p.load)}</span>
    <span class="k">Container</span><span class="mono">${p.cntr||"—"}</span>
   </div></div>
-  ${ro?`<div class="sec"><div class="note">Sent to Tootsi on ${esc(s.at)}. Received ${fmt(s.plt)} plt · ${fmt(s.cs)} cs · ${fmt(s.lbs)} lb${s.recount?" (after recount)":""}. Contact Tootsi Inventory Control to make a change.</div></div>`:""}
-  <div class="sec"><h3>Your receiving</h3>
-   <div class="step ${okQty?"ok":""}"><h4><span class="num">1</span>Count what you received</h4>
-    <p>Count every pallet and case. Weigh or add up the net weight. Tootsi checks your count against the PO.</p>
+  ${ro?`<div class="sec"><div class="note">Sent on ${esc(s.at)} by ${esc(s.by)}. Received ${fmt(s.plt)} plt · ${fmt(s.cs)} cs · ${fmt(s.lbs)} lb${s.recount?" (after recount)":""}. Contact Tootsi ${who} to make a change.</div></div>`:""}
+  ${ro?"":`<div class="sec"><h3>Receiving · 5 steps</h3>
+   <div class="step ${form.loadPics.length?"ok":""}"><h4>${n(1)}Photo of the load before unloading</h4>
+    <p>Open the trailer or container and take a photo before touching anything. This is our proof of how the supplier loaded it.</p>
+    <label class="drop"><input type="file" accept="image/*" capture="environment" multiple data-f="loadPics">📷 Take photo of the load</label>${thumbs(form.loadPics)}
+   </div>
+   <div class="step ${okQty?"ok":""}"><h4>${n(2)}Count what you received</h4>
+    <p>Count every pallet and case. Weigh or add up the net weight. The system checks your count against the PO.</p>
     <div class="row2" style="grid-template-columns:1.2fr 1fr 1fr 1fr">
-     <div><label>Date received</label><input class="in" type="date" id="f_recv" value="${form.recv}" ${dis}></div>
-     <div><label>Pallets</label><input class="in" type="number" id="f_plt" value="${ro?s.first?.plt??s.plt:form.plt}" ${dis}></div>
-     <div><label>Cases</label><input class="in" type="number" id="f_cs" value="${ro?s.first?.cs??s.cs:form.cs}" ${dis}></div>
-     <div><label>Net lbs</label><input class="in" type="number" id="f_lbs" value="${ro?s.first?.lbs??s.lbs:form.lbs}" ${dis}></div>
+     <div><label>Date received</label><input class="in" type="date" id="f_recv" value="${form.recv}"></div>
+     <div><label>Pallets</label><input class="in" type="number" id="f_plt" value="${form.plt}"></div>
+     <div><label>Cases</label><input class="in" type="number" id="f_cs" value="${form.cs}"></div>
+     <div><label>Net lbs</label><input class="in" type="number" id="f_lbs" value="${form.lbs}"></div>
     </div>
    </div>
-   ${needRecount||(ro&&s.recount)?`
+   ${needRecount?`
    <div class="step ${okRe&&okNote?"ok":""}" style="${okRe&&!needNote?"":"border-color:#f1c27d;background:#fffaf0"}"><h4><span class="num" style="background:var(--amber)">!</span>Recount needed</h4>
-    <p>Your count does not match the PO on: <b>${(ro?["the first count"]:firstDiff).join(", ")}</b>. Please recount the load and enter the new numbers.</p>
+    <p>Your count does not match the PO on: <b>${firstDiff.join(", ")}</b>. Please recount the load and enter the new numbers.</p>
     <div class="row2">
-     <div><label>Pallets (recount)</label><input class="in" type="number" id="r_plt" value="${ro?s.plt:form.rplt}" ${dis}></div>
-     <div><label>Cases (recount)</label><input class="in" type="number" id="r_cs" value="${ro?s.cs:form.rcs}" ${dis}></div>
-     <div><label>Net lbs (recount)</label><input class="in" type="number" id="r_lbs" value="${ro?s.lbs:form.rlbs}" ${dis}></div>
+     <div><label>Pallets (recount)</label><input class="in" type="number" id="r_plt" value="${form.rplt}"></div>
+     <div><label>Cases (recount)</label><input class="in" type="number" id="r_cs" value="${form.rcs}"></div>
+     <div><label>Net lbs (recount)</label><input class="in" type="number" id="r_lbs" value="${form.rlbs}"></div>
     </div>
-    ${needNote||(ro&&s.diffNote)?`<p style="margin:10px 0 6px;color:var(--amber)"><b>Still different after recount${ro?"":" on: "+reDiff.join(", ")}.</b> Tell us what you found. Tootsi Purchasing will be alerted.</p>
-     <textarea id="f_note" rows="2" placeholder="e.g. Recounted twice. 20 cases short on pallet 7." ${dis}>${esc(ro?s.diffNote:form.diffNote)}</textarea>`:okRe&&needRecount?`<p style="margin:10px 0 0;color:var(--green)">✓ Recount matches the PO. Thank you.</p>`:""}
+    ${needNote?`<p style="margin:10px 0 6px;color:var(--amber)"><b>Still different after recount on: ${reDiff.join(", ")}.</b> Tell us what you found. Purchasing will be alerted.</p>
+     <textarea id="f_note" rows="2" placeholder="e.g. Recounted twice. 20 cases short on pallet 7.">${esc(form.diffNote)}</textarea>`:okRe?`<p style="margin:10px 0 0;color:var(--green)">✓ Recount matches the PO. Thank you.</p>`:""}
    </div>`:""}
-   <div class="step ${okLabel?"ok":""}"><h4><span class="num">2</span>Label photo</h4>
+   <div class="step ${okLabel?"ok":""}"><h4>${n(3)}Label photo</h4>
     <p>Take a clear, close photo of the product label. Item code, lot number and expiry must be readable.</p>
-    ${ro?"":`<label class="drop"><input type="file" accept="image/*" capture="environment" multiple data-f="label">📷 Take or choose photo</label>`}
-    ${thumbs(form.label)}
-    ${ro?"":`<label class="check"><input type="checkbox" id="f_leg" ${form.legible?"checked":""}> I checked: the lot number and expiry are easy to read in the photo.</label>`}
+    <label class="drop"><input type="file" accept="image/*" capture="environment" multiple data-f="label">📷 Take or choose photo</label>${thumbs(form.label)}
+    <label class="check"><input type="checkbox" id="f_leg" ${form.legible?"checked":""}> I checked: the lot number and expiry are easy to read in the photo.</label>
    </div>
-   <div class="step ${okDoc?"ok":""}"><h4><span class="num">3</span>Receiving document</h4>
-    <p>Your signed receiving report or BOL, as a PDF or photo.</p>
-    ${ro?"":`<label class="drop"><input type="file" accept="image/*,application/pdf" multiple data-f="doc">📄 Add receiving document</label>`}
-    ${thumbs(form.doc)}
+   <div class="step ${okDoc?"ok":""}"><h4>${n(4)}Receiving document</h4>
+    <p>Signed receiving report or BOL, as a PDF or photo.</p>
+    <label class="drop"><input type="file" accept="image/*,application/pdf" multiple data-f="doc">📄 Add receiving document</label>${thumbs(form.doc)}
    </div>
-   <div class="step ${okDmg?"ok":""}"><h4><span class="num">4</span>Any damage?</h4>
-    <div class="yn"><button data-y="0" class="${form.damage===false?"on":""}" ${dis}>No, all good</button><button data-y="1" class="${form.damage===true?"on":""}" ${dis}>Yes</button></div>
-    ${form.damage?`<div style="margin-top:10px"><textarea id="f_dmg" rows="3" placeholder="Short explanation: what, how many, where (e.g. 3 bags torn on pallet 4, product spilled)" ${dis}>${esc(form.dmgText)}</textarea>
-     ${ro?"":`<label class="drop" style="margin-top:8px"><input type="file" accept="image/*" capture="environment" multiple data-f="dmgPics">📷 Add damage photos</label>`}
-     ${thumbs(form.dmgPics)}</div>`:""}
+   <div class="step ${okCond?"ok":""}"><h4>${n(5)}Load condition</h4>
+    <p>How did the load arrive?</p>
+    <div class="chips">${CONDS.map(c=>`<button data-c="${c}" class="${form.cond===c?"on":""}">${c}</button>`).join("")}</div>
+    ${bad?`<div style="margin-top:10px"><textarea id="f_dmg" rows="3" placeholder="Short explanation: what, how many, where (e.g. 3 bags torn on pallet 4, product spilled)">${esc(form.dmgText)}</textarea>
+     <label class="drop" style="margin-top:8px"><input type="file" accept="image/*" capture="environment" multiple data-f="dmgPics">📷 Add damage photos</label>${thumbs(form.dmgPics)}</div>`:""}
    </div>
-   ${ro?"":`<button class="btn" id="send" style="width:100%;margin-top:6px" ${ready?"":"disabled"}>${ready?"Send to Tootsi":!okQty?"Enter your count to continue":!okRe?"Enter your recount to continue":!okNote?"Explain the difference to continue":"Complete all steps to send"}</button>`}
-  </div>
+   <button class="btn" id="send" style="width:100%;margin-top:6px" ${ready?"":"disabled"}>${ready?"Send to Tootsi":!form.loadPics.length?"Add the load photo to continue":!okQty?"Enter your count to continue":!okRe?"Enter your recount to continue":!okNote?"Explain the difference to continue":"Complete all steps to send"}</button>
+  </div>`}
  </div>`);
  if(ro)return;
  const rd=()=>{const y=$("drawer").scrollTop;drawReceive(po,false);$("drawer").scrollTop=y};
  const bind=(id,key)=>{const el=$(id);if(el)el.onchange=e=>{form[key]=e.target.value;rd()}};
- bind("f_recv","recv");bind("f_plt","plt");bind("f_cs","cs");bind("f_lbs","lbs");bind("r_plt","rplt");bind("r_cs","rcs");bind("r_lbs","rlbs");
- const leg=$("f_leg");if(leg)leg.onchange=e=>{form.legible=e.target.checked;rd()};
+ ["recv","plt","cs","lbs"].forEach(k=>bind("f_"+k,k));["plt","cs","lbs"].forEach(k=>bind("r_"+k,"r"+k));
+ $("f_leg").onchange=e=>{form.legible=e.target.checked;rd()};
  document.querySelectorAll("[data-f]").forEach(i=>i.onchange=()=>{[...i.files].forEach(f=>form[i.dataset.f].push({name:f.name,type:f.type,url:URL.createObjectURL(f)}));rd()});
- document.querySelectorAll("[data-y]").forEach(b=>b.onclick=()=>{form.damage=b.dataset.y==="1";rd()});
+ document.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{form.cond=b.dataset.c;rd()});
  const t=$("f_dmg");if(t){t.oninput=e=>{form.dmgText=e.target.value};t.onchange=rd}
- const n=$("f_note");if(n){n.oninput=e=>{form.diffNote=e.target.value};n.onchange=rd}
- const sb=$("send");if(sb)sb.onclick=()=>{
+ const nt=$("f_note");if(nt){nt.oninput=e=>{form.diffNote=e.target.value};nt.onchange=rd}
+ $("send").onclick=()=>{
   const final=needRecount?re:first;
   SUB[po]={recv:form.recv,plt:final.plt,cs:final.cs,lbs:final.lbs,first:needRecount?first:null,recount:needRecount,diffNote:needNote?form.diffNote:"",
-   label:form.label,doc:form.doc,damage:form.damage,dmgText:form.dmgText,dmgPics:form.dmgPics,by:ROLES[role].name,at:now()};
+   label:form.label,doc:form.doc,loadPics:form.loadPics,cond:form.cond,damage:bad,dmgText:bad?form.dmgText:"",dmgPics:bad?form.dmgPics:[],
+   by:isTPL(p.wh)?ROLES[role].name:"Tootsi receiving ("+p.wh+")",at:now(),prev:rq?rq.prev:null};
+  if(rq)delete REQ[po];
+  if(full.x.qc==="Not received")full.x.qc="Locked";
   closeD();tab="done";render();
-  toast(needNote||form.damage?"Sent. Tootsi Purchasing was alerted about the difference.":"Sent to Tootsi. Thank you!");
+  toast(needNote||bad?"Sent. Purchasing was alerted and an issue was opened.":"Sent. Everyone at Tootsi can see it now.");
  };
 }
 
 // ================= TOOTSI VIEW =================
 function qtyStatus(p){
  const s=SUB[p.po],pl=PL[p.po];
- const plDiff=pl?diffs(p,pl):[];
- const rcDiff=s?diffs(p,s):[];
- if(s&&rcDiff.length)return{cls:"p-dmg",t:"Received ≠ expected"};
- if(plDiff.length)return{cls:"p-dmg",t:"Packing list ≠ PO"};
+ if(s&&diffs(p,s).length)return{cls:"p-dmg",t:"Received ≠ expected"};
+ if(pl&&diffs(p,pl).length)return{cls:"p-dmg",t:"Packing list ≠ PO"};
  if(s)return{cls:"p-done",t:"Matches"};
  if(pl)return{cls:"p-done",t:"Packing list OK"};
- return{cls:"p-todo",t:"Not checked yet"};
+ return{cls:"p-grey",t:"Not checked yet"};
+}
+function statusPill(p){
+ const s=SUB[p.po];
+ if(REQ[p.po])return `<span class="pill p-warn">Recount requested</span>`;
+ if(s)return s.damage?`<span class="pill p-dmg">Received · damage</span>`:`<span class="pill p-done">Received</span>`;
+ if(p.eta<TODAY)return `<span class="pill p-dmg">Late · ${ageDays(p.eta)} d</span>`;
+ return `<span class="pill p-todo">Upcoming</span>`;
 }
 function renderTootsi(){
- const rows=POS.map(p=>({p,s:SUB[p.po],q:qtyStatus(p)}));
- const issues=rows.filter(r=>r.q.cls==="p-dmg"||r.s?.damage).length;
+ const all=POS;
+ const rows=all.filter(p=>(!whF||p.wh===whF)&&(!issF||openIssue(p))&&(!q||[p.po,p.item,p.desc,p.supplier,p.x.so].join(" ").toLowerCase().includes(q)));
+ const issues=all.filter(openIssue);
  $("main").innerHTML=`
- <div class="lock">Internal view. DL and TP never receive the fields marked internal, the expected cases or lbs, or Tootsi documents.</div>
+ <div class="lock">Internal view. DL and TP only ever receive PO #, item, description, date, container, pallets and shipment type for their own POs. Nothing else.</div>
  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
   <div class="hello" style="margin:0"><h2 style="margin:0">All POs</h2></div>
   <button class="btn" id="addpo">＋ Add upcoming PO</button>
  </div>
  <div class="kpis">
-  <div class="kpi"><div class="n">${rows.filter(r=>r.s).length}</div><div class="l">Received and documented by 3PL</div></div>
-  <div class="kpi"><div class="n">${rows.filter(r=>!r.s).length}</div><div class="l">Waiting for 3PL upload</div></div>
-  <div class="kpi" style="${issues?"border-color:var(--red)":""}"><div class="n" style="${issues?"color:var(--red)":""}">${issues}</div><div class="l">Quantity or damage issue</div></div>
-  <div class="kpi"><div class="n">${rows.filter(r=>r.p.manual).length}</div><div class="l">Added by hand (not in the sheets)</div></div>
+  <div class="kpi" data-k="arr"><div class="n">${all.filter(p=>!SUB[p.po]&&p.eta>=TODAY&&ageDays(p.eta)===0||(!SUB[p.po]&&p.eta>TODAY&&(new Date(p.eta)-new Date(TODAY))/864e5<=7)).length}</div><div class="l">Arriving in the next 7 days</div></div>
+  <div class="kpi" data-k="iss" style="${issues.length?"border-color:var(--red)":""}"><div class="n" style="${issues.length?"color:var(--red)":""}">${issues.length}</div><div class="l">Open issues (Fatima CC'd)</div></div>
+  <div class="kpi"><div class="n">${all.filter(p=>!p.x.alloc).length}</div><div class="l">Not allocated (prod / sales)</div></div>
+  <div class="kpi"><div class="n">${all.filter(p=>p.x.qc==="Locked").length}</div><div class="l">QC locked</div></div>
+  <div class="kpi"><div class="n">${all.filter(p=>p.manual).length}</div><div class="l">Added by hand</div></div>
  </div>
- <table><thead><tr><th>PO</th><th>3PL</th><th>Item</th><th>Expected</th><th>Expected qty</th><th>Status</th><th>Qty check</th><th>Docs</th></tr></thead><tbody>
- ${rows.map(({p,s,q})=>`<tr data-po="${p.po}" style="cursor:pointer">
-  <td class="mono"><b style="color:var(--red)">${p.po}</b>${p.manual?`<div><span class="pill" style="background:#f0e7f7;color:#6b3a91;margin-top:4px">Manual</span></div>`:""}</td><td><b>${p.wh}</b></td>
+ <div class="bar">
+  <input id="q" type="search" placeholder="Search PO, item, product, supplier or sales order…" value="${esc(q)}">
+  <div class="chips">${["",...WHS].map(w=>`<button data-w="${w}" class="${whF===w?"on":""}">${w||"All"}${w?` <span style="opacity:.6">${isTPL(w)?"3PL":"Tootsi"}</span>`:""}</button>`).join("")}</div>
+  <label class="check" style="margin:0"><input type="checkbox" id="issF" ${issF?"checked":""}> Open issues only</label>
+ </div>
+ <div class="tw"><table><thead><tr><th>PO</th><th>Dest.</th><th>Item</th><th>Expected</th><th>Expected qty</th><th>Status</th><th>Who it's for</th><th>Qty check</th><th>Issue</th></tr></thead><tbody>
+ ${rows.length?rows.map(p=>{const s=SUB[p.po],qs=qtyStatus(p),is=openIssue(p);return `<tr data-po="${p.po}">
+  <td class="mono"><b style="color:var(--red)">${p.po}</b>${p.manual?`<div><span class="pill a-prod" style="margin-top:4px">Manual</span></div>`:""}</td>
+  <td><b>${p.wh}</b><div style="font-size:11px;color:var(--muted)">${isTPL(p.wh)?"3PL":"Tootsi"}</div></td>
   <td>${p.item}<div style="color:var(--muted);font-size:12px">${esc(p.desc)}</div></td>
-  <td>${fd(p.eta)}</td>
-  <td style="font-size:12.5px">${p.plt} plt<br>${fmt(p.cs)} cs<br><span style="color:var(--muted)">${fmt(p.lbs)} lb</span></td>
-  <td>${s?(s.damage?'<span class="pill p-dmg">Damage</span>':'<span class="pill p-done">Received</span>'):'<span class="pill p-todo">Waiting</span>'}${s?`<div style="color:var(--muted);font-size:11.5px;margin-top:4px">${esc(s.by)} · ${esc(s.at)}</div>`:""}</td>
-  <td><span class="pill ${q.cls}">${q.t}</span>${s?.recount?`<div style="color:var(--amber);font-size:11.5px;margin-top:4px">Recount done</div>`:""}</td>
-  <td style="font-size:12px">📎 ${(INT[p.po]||[]).length+(s?(s.demo?4:s.label.length+s.doc.length+s.dmgPics.length):0)}</td></tr>`).join("")}
- </tbody></table>
- <p class="note" style="margin-top:14px">Click any PO to see the full comparison and add documents. Try it: switch to "TP user", receive PO 90101 with 1,090 cases instead of 1,100, and watch it ask for a recount.</p>`;
+  <td style="white-space:nowrap">${fd(p.eta)}</td>
+  <td style="font-size:12.5px;white-space:nowrap">${p.plt} plt · ${fmt(p.cs)} cs<br><span style="color:var(--muted)">${fmt(p.lbs)} lb</span></td>
+  <td>${statusPill(p)}<div style="margin-top:4px">${qcPill(p.x.qc)}</div></td>
+  <td>${allocPill(p.x)}${p.x.so?`<div style="font-size:11.5px;color:var(--muted);margin-top:3px">${esc(p.x.so)}</div>`:""}</td>
+  <td><span class="pill ${qs.cls}">${qs.t}</span></td>
+  <td style="font-size:12px">${is?`<b style="color:var(--red)">${esc(is.owner)}</b><div style="color:var(--muted)">open ${ageDays(is.opened)} d</div>`:"—"}</td></tr>`}).join(""):`<tr><td colspan="9" class="note" style="text-align:center">No POs match.</td></tr>`}
+ </tbody></table></div>
+ <p class="note" style="margin-top:14px">Click any PO to see everything: who it's for, timeline, quantity check, documents, notes and the claim package. Try it: switch to "TP user", receive PO 90101 with 1,090 cases instead of 1,100.</p>`;
  document.querySelectorAll("tr[data-po]").forEach(tr=>tr.onclick=()=>openInternal(tr.dataset.po));
+ document.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{whF=b.dataset.w;render()});
+ $("issF").onchange=e=>{issF=e.target.checked;render()};
+ const qi=$("q");qi.oninput=e=>{q=e.target.value.toLowerCase();clearTimeout(qi.t);qi.t=setTimeout(()=>{render();const n=$("q");n.focus();n.setSelectionRange(n.value.length,n.value.length)},250)};
+ document.querySelector('[data-k="iss"]').onclick=()=>{issF=!issF;render()};
  $("addpo").onclick=openAddPO;
 }
 
 function fileList(arr,emptyTxt){return arr.length?arr.map(f=>`<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #f3f3f0">
-  ${f.url&&f.type?.startsWith("image")?`<img src="${f.url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px">`:`<div style="width:44px;height:44px;border-radius:6px;background:#f3f3f0;display:grid;place-items:center">📄</div>`}
+  ${f.url&&f.type?.startsWith("image")?`<img src="${f.url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px">`:`<div style="width:44px;height:44px;border-radius:6px;background:#f3f3f0;display:grid;place-items:center">${f.cat?.includes("photo")||f.cat?.includes("Photo")?"🖼️":"📄"}</div>`}
   <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500">${esc(f.cat||"")}</div><div style="font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}${f.by?" · "+esc(f.by):""}${f.at?" · "+esc(f.at):""}</div></div>
   ${f.url?`<a href="${f.url}" target="_blank" style="font-size:12px;color:var(--red)">Open</a>`:""}</div>`).join(""):`<div class="note">${emptyTxt}</div>`}
-
 function cmpCell(exp,v,k){
  if(v==null)return `<td style="color:var(--muted)">—</td>`;
- const bad=k==="lbs"?(exp&&Math.abs(v-exp)/exp>LBS_TOL):+v!==+exp;
- const d=v-exp;
+ const bad=k==="lbs"?(exp&&Math.abs(v-exp)/exp>LBS_TOL):+v!==+exp, d=v-exp;
  return `<td style="${bad?"color:var(--red);font-weight:600;background:#fdf6f7":""}">${fmt(v)}${bad?`<div style="font-size:11px">${d>0?"+":""}${fmt(d)}</div>`:""}</td>`;
 }
+function evidence(p){
+ const s=SUB[p.po],out=[];
+ if(s){s.loadPics.forEach(f=>out.push({...f,cat:"Load photo (before unloading)"}));s.label.forEach(f=>out.push({...f,cat:"Label photo"}));s.doc.forEach(f=>out.push({...f,cat:"Receiving document"}));s.dmgPics.forEach(f=>out.push({...f,cat:"Damage photo"}))}
+ if(s?.demo)out.push({cat:"Load photo (before unloading)",name:"container_open_90203.jpg"},{cat:"Label photo",name:"label_14015.jpg"},{cat:"Receiving document",name:"DL_receiving_90203.pdf"},{cat:"Damage photo",name:"damage_pallet7_1.jpg"},{cat:"Damage photo",name:"damage_pallet7_2.jpg"});
+ return out;
+}
+function timeline(p){
+ const s=SUB[p.po],pl=PL[p.po];
+ const st=[
+  ["PO on the upcoming list",p.manual?"Added by "+p.manual:"From the shipment sheet",true],
+  ["Supplier packing list received",pl?"Entered by "+pl.by:"",!!pl],
+  ["Expected at "+p.wh,fd(p.eta),!!s||p.eta<=TODAY],
+  ["Received and counted",s?fd(s.recv)+" · "+s.by:"",!!s],
+  ["Quantity verified",s?(diffs(p,s).length?"Difference found":"Matches PO"):"",!!s&&!diffs(p,s).length],
+  ["QC released",p.x.qc,p.x.qc==="Released"],
+ ];
+ const cur=st.findIndex(x=>!x[2]);
+ return `<ul class="timeline">${st.map((x,i)=>`<li><span class="dot ${x[2]?"done":i===cur?"now":""}"></span><span>${x[0]}</span><span class="when">${esc(x[1])}</span></li>`).join("")}</ul>`;
+}
+function claimText(p){
+ const s=SUB[p.po],pl=PL[p.po],ev=evidence(p).concat(INT[p.po]||[]);
+ const L=[];
+ L.push(`CLAIM / NCR SUMMARY · PO ${p.po}`);
+ L.push(`Supplier: ${p.supplier}`);
+ L.push(`Item: ${p.item} ${p.desc}`);
+ L.push(`Received at: ${p.wh} on ${s?s.recv:"(not yet)"}${p.cntr?" · Container "+p.cntr:""} · ${p.load}`);
+ L.push("");
+ L.push(`Quantities (pallets / cases / net lb)`);
+ L.push(`  PO:             ${p.plt} / ${p.cs} / ${p.lbs}`);
+ if(pl)L.push(`  Packing list:   ${pl.plt} / ${pl.cs} / ${pl.lbs}`);
+ if(s?.first)L.push(`  First count:    ${s.first.plt} / ${s.first.cs} / ${s.first.lbs}`);
+ if(s?.prev)L.push(`  Earlier count:  ${s.prev.plt} / ${s.prev.cs} / ${s.prev.lbs}`);
+ if(s)L.push(`  ${s.recount||s.prev?"Recount (final)":"Received"}: ${s.plt} / ${s.cs} / ${s.lbs}`);
+ if(s)L.push(`  Difference vs PO: ${s.cs-p.cs} cases, ${s.lbs-p.lbs} lb`);
+ const counts=1+(s?.first?1:0)+(s?.prev?1:0);
+ if(s)L.push(`  Counted ${counts} time(s).`);
+ L.push("");
+ if(s){L.push(`Load condition: ${s.cond||"—"}`);if(s.damage)L.push(`Damage: ${s.dmgText}`);if(s.diffNote)L.push(`Receiver note: ${s.diffNote}`)}
+ L.push("");
+ L.push(`Supplier conditions on PO: ${p.x.instr||"—"}`);
+ L.push("");
+ L.push(`Evidence attached (${ev.length}):`);
+ ev.forEach(f=>L.push(`  - ${f.cat}: ${f.name}`));
+ return L.join("\n");
+}
 function openInternal(po){
- const p=POS.find(x=>x.po===po),s=SUB[po],docs=INT[po]||(INT[po]=[]),pl=PL[po];
- const from3pl=s?[...s.label.map(f=>({...f,cat:"Label photo"})),...s.doc.map(f=>({...f,cat:"Receiving document"})),...s.dmgPics.map(f=>({...f,cat:"Damage photo"}))]:[];
- if(s?.demo)from3pl.push({cat:"Label photo",name:"label_14015.jpg"},{cat:"Receiving document",name:"DL_receiving_90203.pdf"},{cat:"Damage photo",name:"damage_pallet7_1.jpg"},{cat:"Damage photo",name:"damage_pallet7_2.jpg"});
+ const p=POS.find(x=>x.po===po),s=SUB[po],docs=INT[po]||(INT[po]=[]),pl=PL[po],is=ISSUES[po],notes=NOTES[po]||(NOTES[po]=[]),x=p.x;
  const row=(label,o,sub)=>`<tr><td style="font-weight:500">${label}${sub?`<div style="font-size:11px;color:var(--muted);font-weight:400">${sub}</div>`:""}</td>${o?cmpCell(p.plt,o.plt,"plt")+cmpCell(p.cs,o.cs,"cs")+cmpCell(p.lbs,o.lbs,"lbs"):`<td colspan="3" style="color:var(--muted)">Not entered yet</td>`}</tr>`;
  openD(`
- <div class="dh"><button class="close" id="x">×</button><div style="color:var(--muted);font-size:12px">Purchase order · internal view</div><h2 class="mono">PO ${p.po}</h2><div>${p.item} · ${esc(p.desc)}</div>
-  <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><span class="pill ${s?(s.damage?"p-dmg":"p-done"):"p-todo"}">${s?(s.damage?"Damage reported":"Received"):"Waiting for "+p.wh}</span><span class="pill ${qtyStatus(p).cls}">${qtyStatus(p).t}</span>${p.manual?`<span class="pill" style="background:#f0e7f7;color:#6b3a91">Added by ${esc(p.manual)}</span>`:""}</div></div>
+ <div class="dh"><button class="close" id="x">×</button><div style="color:var(--muted);font-size:12px">Purchase order · ${p.wh} · ${isTPL(p.wh)?"3PL":"Tootsi warehouse"}</div><h2 class="mono">PO ${p.po}</h2><div>${p.item} · ${esc(p.desc)}</div>
+  <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${statusPill(p)}${qcPill(x.qc)}${allocPill(x)}${p.manual?`<span class="pill a-prod">Added by ${esc(p.manual)}</span>`:""}</div></div>
  <div class="db">
+  ${is?`<div class="sec"><div class="issue ${is.status==="Open"?"":"closed"}">
+   <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${is.status==="Open"?"⚠ Open issue":"✓ Resolved"} · ${esc(is.type)}</b><span style="font-size:12px">Open ${ageDays(is.opened)} day(s) · CC Fatima</span></div>
+   <div class="row2" style="grid-template-columns:1fr 1fr;margin-top:10px">
+    <div><label>Owner (who must act)</label><select class="in" id="is_owner">${OWNERS.map(o=>`<option ${o===is.owner?"selected":""}>${o}</option>`).join("")}</select></div>
+    <div><label>Status</label><select class="in" id="is_st">${["Open","Resolved"].map(o=>`<option ${o===is.status?"selected":""}>${o}</option>`).join("")}</select></div>
+   </div>
+   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+    ${s&&isTPL(p.wh)&&!REQ[po]?`<button class="btn ghost" id="askre">↻ Ask ${p.wh} to recount</button>`:""}
+    <button class="btn ghost" id="claim">📋 Build claim package (NCR)</button>
+   </div>
+   <div id="claimbox"></div>
+  </div></div>`:""}
+
+  <div class="sec"><h3>Who it's for <span class="tag">Fulfillment, Sales, Production see this</span></h3>
+   <div class="card">
+    <div class="chips" id="alloc">${["Production","Sales","Split",""].map(a=>`<button data-a="${a}" class="${x.alloc===a?"on":""}">${a||"Not set"}</button>`).join("")}</div>
+    ${x.alloc==="Split"?`<div class="row2" style="grid-template-columns:1fr 1fr;margin-top:10px"><div><label>Cases for production</label><input class="in" type="number" id="a_prod" value="${x.prodQty}"></div><div><label>Cases for sales</label><input class="in" type="number" id="a_sales" value="${x.salesQty}"></div></div>`:""}
+    <div class="row2" style="grid-template-columns:1fr 1fr;margin-top:10px">
+     <div><label>Linked sales order</label><input class="in" id="a_so" value="${esc(x.so)}" placeholder="e.g. SO 118402"></div>
+     <div><label>QC status</label><select class="in" id="a_qc">${["Not received","Locked","Released"].map(o=>`<option ${o===x.qc?"selected":""}>${o}</option>`).join("")}</select></div>
+    </div>
+    <div style="margin-top:10px"><label>Buyer's PO instructions (from SAP)</label><textarea id="a_instr" rows="2" placeholder="e.g. For production only. Palletized, stretch-wrapped, no double stacking.">${esc(x.instr)}</textarea></div>
+    <button class="btn ghost" id="a_save" style="margin-top:10px">Save</button>
+   </div>
+  </div>
+
+  <div class="sec"><h3>Timeline</h3>${timeline(p)}</div>
+
   <div class="sec"><h3>Quantity check</h3>
    <table style="box-shadow:none"><thead><tr><th></th><th>Pallets</th><th>Cases</th><th>Net lbs</th></tr></thead><tbody>
     ${row("Expected (PO)",{plt:p.plt,cs:p.cs,lbs:p.lbs})}
     ${row("Supplier packing list",pl,pl?"entered by "+esc(pl.by):"")}
-    ${s?.first?row("3PL first count",s.first,"did not match"):""}
-    ${row(s?.recount?"3PL recount (final)":"Received by 3PL",s?{plt:s.plt,cs:s.cs,lbs:s.lbs}:null,s?esc(s.by):"")}
+    ${s?.prev?row("Earlier submission",s.prev,"Tootsi asked for a recount"):""}
+    ${s?.first?row("First count",s.first,"did not match"):""}
+    ${row(s?.recount||s?.prev?"Recount (final)":"Received",s?{plt:s.plt,cs:s.cs,lbs:s.lbs}:null,s?esc(s.by):"")}
    </tbody></table>
-   ${s?.diffNote?`<div class="note" style="border-left:3px solid var(--amber)"><b>3PL note:</b> ${esc(s.diffNote)}</div>`:""}
+   ${s?.diffNote?`<div class="note" style="border-left:3px solid var(--amber)"><b>Receiver note:</b> ${esc(s.diffNote)}</div>`:""}
    <div class="step" style="margin-top:10px"><h4>Packing list quantities</h4><p>Purchasing: enter what the supplier's packing list says. Weight differences under 1% are accepted.</p>
     <div class="row2"><div><label>Pallets</label><input class="in" type="number" id="pl_plt" value="${pl?.plt??""}"></div><div><label>Cases</label><input class="in" type="number" id="pl_cs" value="${pl?.cs??""}"></div><div><label>Net lbs</label><input class="in" type="number" id="pl_lbs" value="${pl?.lbs??""}"></div></div>
     <button class="btn ghost" id="pl_save" style="margin-top:10px">Save packing list quantities</button>
    </div>
+   ${!isTPL(p.wh)&&!s?`<button class="btn" id="recvown" style="width:100%;margin-top:10px">Record receiving at ${p.wh}</button>`:""}
   </div>
+
   <div class="sec"><h3>PO details</h3><div class="grid2">
-   <span class="k">3PL</span><span><b>${p.wh}</b></span>
+   <span class="k">Destination</span><span><b>${p.wh}</b> · ${isTPL(p.wh)?"3PL":"Tootsi warehouse"}</span>
    <span class="k">Supplier</span><span>${esc(p.supplier)}</span>
    <span class="k">Expected</span><span>${fd(p.eta)}</span>
    <span class="k">Shipment</span><span>${esc(p.load)}</span>
    <span class="k">Container</span><span class="mono">${p.cntr||"—"}</span>
+   <span class="k">Total stock (item)</span><span>${x.stock?fmt(x.stock)+" lb":"—"}</span>
   </div></div>
-  <div class="sec"><h3>Internal only <span class="demo" style="font-size:10px;background:var(--amber-soft);color:var(--amber);padding:2px 6px;border-radius:10px;text-transform:none;letter-spacing:0">never shown to 3PL</span></h3><div class="grid2">
-   <span class="k">Allocation</span><span>${esc(p._private.alloc||"Not set")}</span>
-   <span class="k">Total stock</span><span>${p._private.stock?p._private.stock.toLocaleString()+" lb":"—"}</span>
-   <span class="k">Planning note</span><span>${esc(p._private.note||"—")}</span>
-  </div></div>
-  <div class="sec"><h3>From ${p.wh} (3PL receiving)</h3>
-   ${s?`<div class="grid2" style="margin-bottom:10px"><span class="k">Received</span><span>${fd(s.recv)}</span><span class="k">Sent by</span><span>${esc(s.by)} · ${esc(s.at)}</span>
+
+  <div class="sec"><h3>Receiving at ${p.wh}</h3>
+   ${s?`<div class="grid2" style="margin-bottom:10px"><span class="k">Received</span><span>${fd(s.recv)}</span><span class="k">Sent by</span><span>${esc(s.by)} · ${esc(s.at)}</span><span class="k">Load condition</span><span style="${s.cond&&s.cond!=="Good"?"color:var(--red)":""}">${esc(s.cond||"—")}</span>
    ${s.damage?`<span class="k" style="color:var(--red)">Damage</span><span style="color:var(--red)">${esc(s.dmgText)}</span>`:""}</div>`:""}
-   ${fileList(from3pl,`${p.wh} has not sent the receiving info yet.`)}
+   ${fileList(evidence(p),isTPL(p.wh)?`${p.wh} has not sent the receiving info yet.`:"Not received yet.")}
   </div>
+
   <div class="sec"><h3>Tootsi documents</h3>
    ${fileList(docs,"No documents yet. Add the first one below.")}
    <div class="step" style="margin-top:12px"><h4>Add a document</h4>
     <div class="row2" style="grid-template-columns:1fr 1fr">
      <div><label>Type</label><select class="in" id="i_cat">${CATS.map(c=>`<option ${c===intCat?"selected":""}>${c}</option>`).join("")}</select></div>
-     <div><label>Your name / team</label><select class="in" id="i_who">${TEAMS.map(w=>`<option ${w===intWho?"selected":""}>${w}</option>`).join("")}</select></div>
+     <div><label>Your team</label><select class="in" id="i_who">${TEAMS.map(w=>`<option ${w===intWho?"selected":""}>${w}</option>`).join("")}</select></div>
     </div>
     <label class="drop" style="margin-top:10px"><input type="file" multiple id="i_file">📎 Choose files or take a photo</label>
-    <p style="margin:8px 0 0">In the real app your name comes from your login automatically.</p>
    </div>
   </div>
+
+  <div class="sec"><h3>Notes <span class="tag">replaces back-and-forth emails</span></h3>
+   ${notes.length?notes.map(n=>`<div class="msg"><b>${esc(n.who)}</b> <span>${esc(n.at)}</span><div>${esc(n.text)}</div></div>`).join(""):`<div class="note">No notes yet.</div>`}
+   <div style="display:flex;gap:8px;margin-top:8px"><input class="in" id="n_txt" placeholder="Write a note for everyone on this PO…"><button class="btn" id="n_add">Post</button></div>
+  </div>
  </div>`);
+ const re=()=>{const y=$("drawer").scrollTop;render();openInternal(po);$("drawer").scrollTop=y};
  $("i_cat").onchange=e=>intCat=e.target.value;
  $("i_who").onchange=e=>intWho=e.target.value;
- $("i_file").onchange=e=>{[...e.target.files].forEach(f=>docs.push({cat:intCat,name:f.name,type:f.type,url:URL.createObjectURL(f),by:intWho,at:now()}));
-  toast("Added to PO "+po+". Everyone at Tootsi can see it now.");render();openInternal(po)};
+ $("i_file").onchange=e=>{[...e.target.files].forEach(f=>docs.push({cat:intCat,name:f.name,type:f.type,url:URL.createObjectURL(f),by:intWho,at:now()}));toast("Added to PO "+po+". Everyone at Tootsi can see it.");re()};
  $("pl_save").onclick=()=>{
   const v={plt:num($("pl_plt").value),cs:num($("pl_cs").value),lbs:num($("pl_lbs").value),by:intWho};
   if(v.plt==null||v.cs==null||v.lbs==null){toast("Enter pallets, cases and lbs.");return}
-  PL[po]=v;const d=diffs(p,v);render();openInternal(po);
-  toast(d.length?"Packing list does not match the PO on: "+d.join(", ")+". Check with the supplier.":"Packing list matches the PO.");
+  PL[po]=v;const d=diffs(p,v);re();
+  toast(d.length?"Packing list does not match the PO on: "+d.join(", ")+". An issue was opened.":"Packing list matches the PO.");
  };
+ document.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{x.alloc=b.dataset.a;re()});
+ $("a_save").onclick=()=>{
+  x.so=$("a_so").value.trim();x.qc=$("a_qc").value;x.instr=$("a_instr").value.trim();
+  if($("a_prod")){x.prodQty=$("a_prod").value;x.salesQty=$("a_sales").value}
+  toast("Saved. Fulfillment and Sales can see who this PO is for.");re();
+ };
+ $("n_add").onclick=()=>{const t=$("n_txt").value.trim();if(!t)return;notes.push({who:intWho,text:t,at:now()});re()};
+ $("n_txt").onkeydown=e=>{if(e.key==="Enter")$("n_add").click()};
+ if(is){
+  $("is_owner").onchange=e=>{is.owner=e.target.value;notes.push({who:intWho,text:"Issue assigned to "+is.owner+".",at:now()});re()};
+  $("is_st").onchange=e=>{is.status=e.target.value;notes.push({who:intWho,text:"Issue marked "+is.status+".",at:now()});re()};
+  const a=$("askre");if(a)a.onclick=()=>{REQ[po]={at:now(),prev:{plt:s.plt,cs:s.cs,lbs:s.lbs}};delete SUB[po];notes.push({who:intWho,text:"Asked "+p.wh+" to recount the load.",at:now()});toast(p.wh+" will see the recount request in their portal.");re()};
+  $("claim").onclick=()=>{$("claimbox").innerHTML=`<textarea id="ct" rows="14" style="margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:12px">${esc(claimText(p))}</textarea><button class="btn" id="cc" style="margin-top:8px">Copy for email to supplier</button>`;
+   $("cc").onclick=async()=>{try{await navigator.clipboard.writeText($("ct").value);toast("Copied. Paste it in your email and attach the files listed.")}catch(e){$("ct").select();toast("Select all and copy (Ctrl+C).")}}};
+ }
+ const ro=$("recvown");if(ro)ro.onclick=()=>openReceive(po);
 }
 
-// ---------- Add upcoming PO (for POs not in the sheets) ----------
+// ---------- Add upcoming PO ----------
 function openAddPO(){
  openD(`
- <div class="dh"><button class="close" id="x">×</button><div style="color:var(--muted);font-size:12px">New upcoming PO</div><h2>Add a PO</h2><div style="color:var(--muted);font-size:13px">For POs that are not in the Upcoming FTL/FCL sheet (LTL, small orders, parcels).</div></div>
+ <div class="dh"><button class="close" id="x">×</button><div style="color:var(--muted);font-size:12px">New upcoming PO</div><h2>Add a PO</h2><div style="color:var(--muted);font-size:13px">For POs that are not in the shipment sheets (LTL, small orders, parcels).</div></div>
  <div class="db"><form id="nf">
   <div class="sec"><h3>PO</h3><div class="row2">
    <div><label>PO number *</label><input class="in" name="po" required inputmode="numeric"></div>
    <div><label>Item code *</label><input class="in" name="item" required></div>
-   <div><label>Going to *</label><select class="in" name="wh" required><option value="">Choose…</option><option>TP</option><option>DL</option></select></div>
+   <div><label>Going to *</label><select class="in" name="wh" required><option value="">Choose…</option>
+    <optgroup label="Tootsi warehouses">${OWN.map(w=>`<option>${w}</option>`).join("")}</optgroup>
+    <optgroup label="3PL">${TPL.map(w=>`<option>${w}</option>`).join("")}</optgroup></select></div>
   </div>
-  <div style="margin-top:8px"><label style="font-size:12px;color:var(--muted)">Product description *</label><input class="in" name="desc" required></div>
+  <div style="margin-top:8px"><label>Product description *</label><input class="in" name="desc" required></div>
   <div class="row2" style="grid-template-columns:1fr 1fr;margin-top:8px">
    <div><label>Supplier *</label><input class="in" name="supplier" required></div>
    <div><label>Expected arrival *</label><input class="in" type="date" name="eta" required></div>
@@ -401,19 +579,25 @@ function openAddPO(){
    <div><label>Pallets *</label><input class="in" type="number" name="plt" min="0" required></div>
    <div><label>Cases *</label><input class="in" type="number" name="cs" min="0" required></div>
    <div><label>Net lbs *</label><input class="in" type="number" name="lbs" min="0" required></div>
-  </div><p style="font-size:12px;color:var(--muted);margin:6px 0 0">The 3PL does not see cases or lbs. They count blind, and the portal asks for a recount if their numbers differ.</p></div>
+  </div><p class="hint">Receivers count blind: they never see expected cases or lbs. The system asks for a recount if their numbers differ.</p></div>
+  <div class="sec"><h3>Who it's for</h3><div class="row2" style="grid-template-columns:1fr 1fr">
+   <div><label>Allocation</label><select class="in" name="alloc"><option value="">Not set yet</option><option>Production</option><option>Sales</option><option>Split</option></select></div>
+   <div><label>Linked sales order</label><input class="in" name="so" placeholder="optional"></div>
+  </div>
+  <div style="margin-top:8px"><label>PO instructions</label><textarea name="instr" rows="2" placeholder="e.g. Palletized, stretch-wrapped, no double stacking"></textarea></div></div>
   <div class="sec"><h3>Shipment</h3><div class="row2" style="grid-template-columns:1fr 1fr">
    <div><label>Shipment type</label><select class="in" name="load"><option>LTL · Palletized</option><option>FTL · Palletized</option><option>FCL 20' · Floor loaded</option><option>FCL 40' · Floor loaded</option><option>FCL 40' · Palletized</option><option>Parcel / courier</option></select></div>
    <div><label>Container # (if any)</label><input class="in" name="cntr"></div>
   </div>
-  <div style="margin-top:8px"><label style="font-size:12px;color:var(--muted)">Added by</label><select class="in" name="by">${TEAMS.map(w=>`<option ${w===intWho?"selected":""}>${w}</option>`).join("")}</select></div></div>
+  <div style="margin-top:8px"><label>Added by</label><select class="in" name="by">${TEAMS.map(w=>`<option ${w===intWho?"selected":""}>${w}</option>`).join("")}</select></div></div>
   <button class="btn" type="submit" style="width:100%;margin-top:18px">Add PO</button>
  </form></div>`);
  $("nf").onsubmit=e=>{
   e.preventDefault();const f=Object.fromEntries(new FormData(e.target));
   if(POS.some(p=>p.po===f.po.trim())){toast("PO "+f.po+" is already in the hub.");return}
-  POS.push({po:f.po.trim(),wh:f.wh,item:f.item.trim(),desc:f.desc.trim().toUpperCase(),eta:f.eta,cntr:f.cntr.trim(),plt:+f.plt,cs:+f.cs,lbs:+f.lbs,load:f.load,supplier:f.supplier.trim(),_private:{},manual:f.by});
-  closeD();render();toast("PO "+f.po+" added. "+f.wh+" can now see it in their portal.");
+  POS.push({po:f.po.trim(),wh:f.wh,item:f.item.trim(),desc:f.desc.trim().toUpperCase(),eta:f.eta,cntr:f.cntr.trim(),plt:+f.plt,cs:+f.cs,lbs:+f.lbs,load:f.load,supplier:f.supplier.trim(),manual:f.by,
+   x:{instr:f.instr.trim(),alloc:f.alloc,so:f.so.trim(),qc:"Not received",prodQty:"",salesQty:""}});
+  closeD();render();toast("PO "+f.po+" added."+(isTPL(f.wh)?" "+f.wh+" can now see it in their portal.":" "+f.wh+" receiving can record it here."));
  };
 }
 render();
