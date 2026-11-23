@@ -12,7 +12,8 @@ var TABLES = {
   Recounts: ['id','at','from','active'],
   Docs: ['id','cat','name','url','by','at'],
   SupplierQty: ['id','kind','plt','cs','lbs','by','at'],
-  Users: ['token','wh','name','email','active'],
+  Users: ['token','wh','name','email','active','user','salt','passHash','lastLogin'],
+  Sessions: ['sid','token','expires','at'],
   Config: ['key','value'],
   Log: ['at','who','action','id','detail']
 };
@@ -97,6 +98,14 @@ function upsertWhere(name, match, o) {
   var found = readAll(name).filter(match)[0];
   if (found) sheet_(name).getRange(found._row, 1, 1, TABLES[name].length).setValues([toRow_(name, o)]);
   else append(name, o);
+  delete _cache[name];
+}
+
+/** Delete every row where match(row) is true (bottom first, so row numbers stay right). */
+function deleteWhere(name, match) {
+  var rows = readAll(name).filter(match).map(function (r) { return r._row; }).sort(function (a, b) { return b - a; });
+  var sh = sheet_(name);
+  rows.forEach(function (n) { sh.deleteRow(n); });
   delete _cache[name];
 }
 

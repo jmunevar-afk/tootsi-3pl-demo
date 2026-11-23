@@ -5,8 +5,9 @@
 <header>
   <?!= include('Logo') ?>
   <div><h1 id="ttl">3PL <span>Portal</span></h1><div class="hsub" id="sub"></div></div>
-  <div class="who"><div class="lang" role="group" aria-label="Language"><button type="button" data-lang="en">EN</button><button type="button" data-lang="fr">FR</button></div><div class="nm"><div style="font-weight:500"><?= name ?></div></div></div>
+  <div class="who"><div class="lang" role="group" aria-label="Language"><button type="button" data-lang="en">EN</button><button type="button" data-lang="fr">FR</button></div><div class="nm"><div style="font-weight:500" id="pname"></div></div><button type="button" class="btn ghost" id="logout" style="display:none;min-height:36px;padding:4px 12px;font-size:13px"></button></div>
 </header>
+<div id="login" class="hide"></div>
 <main id="main"><div class="loading">…</div></main>
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dtitle" tabindex="-1"></aside>
@@ -16,8 +17,10 @@
 <?!= include('Lang') ?>
 <?!= include('Receive') ?>
 <script>
-const TOKEN=<?!= JSON.stringify(token) ?>, WH=<?!= JSON.stringify(wh) ?>, NAME=<?!= JSON.stringify(name) ?>;
+let TOKEN=null,WH="",NAME="";const HUB_URL=<?!= JSON.stringify(hubUrl) ?>;
 let lang=<?!= JSON.stringify(lang) ?>;try{lang=localStorage.getItem("tootsi_lang")||lang}catch(e){}
+Object.assign(L.en,{lg_h:"Sign in",lg_s:"3PL partners: use the username and password Tootsi gave you.",lg_user:"Username",lg_pw:"Password",lg_btn:"Sign in",lg_bad:"Wrong username or password.",lg_locked:"Too many tries. Wait 15 minutes, or call Tootsi Inventory Control.",lg_exp:"Your session ended. Please sign in again.",lg_staff:"Tootsi staff",lg_staffp:"Use your Tootsi Google account. No extra password.",lg_staffb:"Open the PO Hub with Google",lg_forgot:"Forgot your password? Call Tootsi Inventory Control. We reset it in one minute.",lg_tag:"Tootsi deliveries at your warehouse.",lg_p:"See the POs coming to you, receive them and send the photos and counts to Tootsi.",lg_l1:"Only your warehouse's deliveries",lg_l2:"Blind count with automatic recount",lg_l3:"Photos and receiving document in one step",lg_l4:"Report a delay in two taps",logout:"Sign out"});
+Object.assign(L.fr,{lg_h:"Connexion",lg_s:"Partenaires 3PL : utilisez le nom d'utilisateur et le mot de passe fournis par Tootsi.",lg_user:"Nom d'utilisateur",lg_pw:"Mot de passe",lg_btn:"Se connecter",lg_bad:"Nom d'utilisateur ou mot de passe incorrect.",lg_locked:"Trop d'essais. Attendez 15 minutes ou appelez le contrôle d'inventaire Tootsi.",lg_exp:"Votre session est terminée. Veuillez vous reconnecter.",lg_staff:"Employés Tootsi",lg_staffp:"Utilisez votre compte Google Tootsi. Aucun autre mot de passe.",lg_staffb:"Ouvrir le PO Hub avec Google",lg_forgot:"Mot de passe oublié ? Appelez le contrôle d'inventaire Tootsi. On le réinitialise en une minute.",lg_tag:"Les livraisons Tootsi à votre entrepôt.",lg_p:"Voyez les commandes qui arrivent chez vous, recevez-les et envoyez photos et quantités à Tootsi.",lg_l1:"Seulement les livraisons de votre entrepôt",lg_l2:"Comptage à l'aveugle avec recomptage automatique",lg_l3:"Photos et bon de réception en une étape",lg_l4:"Signaler un retard en deux touches",logout:"Déconnexion"});
 const t=k=>(L[lang]&&L[lang][k])||L.en[k]||k;
 const CONDS=[["Good","✅","c_Good"],["Shifted load","↔️","c_Shifted"],["Collapsed pallets","⬇️","c_Collapsed"],["Double-stacked","⏫","c_Double"],["Torn / leaking bags","🩹","c_Torn"],["Wet / dirty","💧","c_Wet"],["Other","❓","c_Other"]];
 const REASONS=["r_notarr","r_customs","r_docs","r_seal","r_wrong","r_dmg","r_dock","r_other"];
@@ -28,10 +31,35 @@ let DATA=null,tab="todo";
 
 function setLang(l){lang=l;try{localStorage.setItem("tootsi_lang",l)}catch(e){}document.documentElement.lang=l;LOCALE=l==="fr"?"fr-CA":"en-CA";
  document.querySelectorAll("[data-lang]").forEach(b=>{b.classList.toggle("on",b.dataset.lang===l);b.setAttribute("aria-pressed",b.dataset.lang===l)});
- $("ttl").innerHTML=l==="fr"?'Portail <span>3PL</span>':'3PL <span>Portal</span>';$("sub").textContent=t("portal_sub");if(DATA)render()}
+ $("ttl").innerHTML=l==="fr"?'Portail <span>3PL</span>':'3PL <span>Portal</span>';$("sub").textContent=t("portal_sub");$("logout").textContent=t("logout");if(!TOKEN)showLogin(loginMsg);else if(DATA)render()}
 document.querySelectorAll("[data-lang]").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
 
-async function load(){try{DATA=await call("portalLoad",TOKEN);render()}catch(e){$("main").innerHTML=`<div class="err">${esc(e.message)}</div>`}}
+async function load(){try{DATA=await call("portalLoad",TOKEN);WH=DATA.wh;NAME=DATA.name;$("pname").textContent=NAME;$("logout").style.display="";render()}catch(e){if(e.message==="SESSION")return signedOut("lg_exp");$("main").innerHTML=`<div class="err">${esc(e.message)}</div>`}}
+// ---------- sign in ----------
+let loginMsg="";
+const SKEY="tootsi_3pl_session";
+function signedOut(msg){TOKEN=null;DATA=null;try{localStorage.removeItem(SKEY)}catch(e){}closeD&&$("drawer").classList.contains("open")&&closeD();$("pname").textContent="";$("logout").style.display="none";$("main").innerHTML="";showLogin(msg||"")}
+function showLogin(msg){loginMsg=msg;const lg=$("login");lg.classList.remove("hide");
+ lg.innerHTML=`<div class="lg-side"><div style="position:relative;z-index:1;font-size:13px;letter-spacing:2px;color:#c9cbcd;text-transform:uppercase">PO Hub · Tootsi Impex</div>
+  <div><h2>${t("lg_tag")}</h2><p>${t("lg_p")}</p><ul><li>${t("lg_l1")}</li><li>${t("lg_l2")}</li><li>${t("lg_l3")}</li><li>${t("lg_l4")}</li></ul></div>
+  <div style="font-size:12px;color:#8d9195;position:relative;z-index:1">Tootsi Impex · Inventory Control</div></div>
+ <div class="lg-main"><form class="lg-box" id="lgf" novalidate>
+  <div class="lg-top">${document.querySelector("header img").outerHTML}<div class="lang" role="group" aria-label="Language">${["en","fr"].map(l=>`<button type="button" data-lglang="${l}" class="${lang===l?"on":""}" aria-pressed="${lang===l}">${l.toUpperCase()}</button>`).join("")}</div></div>
+  <h1>${t("lg_h")}</h1><p class="s">${t("lg_s")}</p>
+  <label for="lg_u">${t("lg_user")}</label><input class="in" id="lg_u" autocomplete="username" autocapitalize="none" spellcheck="false">
+  <label for="lg_p">${t("lg_pw")}</label><input class="in" id="lg_p" type="password" autocomplete="current-password">
+  <div class="lg-err" id="lg_err" role="alert">${msg?esc(t(msg)):""}</div>
+  <button class="btn" type="submit">${t("lg_btn")}</button>
+  <p class="small" style="margin-top:12px">${t("lg_forgot")}</p>
+  <div class="lg-demo"><h4>${t("lg_staff")}</h4><p>${t("lg_staffp")}</p><a class="btn ghost" style="width:100%;text-decoration:none;display:flex;align-items:center;justify-content:center" href="${esc(HUB_URL||"#")}" target="_top">${t("lg_staffb")}</a></div>
+ </form></div>`;
+ lg.querySelectorAll("[data-lglang]").forEach(b=>b.onclick=()=>setLang(b.dataset.lglang));
+ const u=$("lg_u");setTimeout(()=>u.focus(),50);
+ $("lgf").onsubmit=async e=>{e.preventDefault();const er=$("lg_err"),btn=e.target.querySelector("button[type=submit]");er.textContent="";btn.disabled=true;
+  try{const r=await call("portalLogin",$("lg_u").value,$("lg_p").value);TOKEN=r.sid;try{localStorage.setItem(SKEY,r.sid);if(!localStorage.getItem("tootsi_lang"))lang=r.lang}catch(x){}
+   loginMsg="";lg.classList.add("hide");lg.innerHTML="";setLang(lang);$("main").innerHTML='<div class="loading">…</div>';await load()}
+  catch(x){er.textContent=t(x.message==="LOCKED"?"lg_locked":x.message==="BADLOGIN"?"lg_bad":"")||x.message;btn.disabled=false;$("lg_p").value="";$("lg_p").focus()}}}
+
 const slaPill=r=>r.sla?`<span class="sla sla-${r.sla.lvl}"><span aria-hidden="true">${ICON[r.sla.lvl]}</span> ${esc(t("sla_"+r.sla.lvl))}</span>`:"";
 
 function render(){
@@ -105,6 +133,10 @@ function drawUnplanned(){const ok=uform.doc.length&&uform.desc.trim();
  document.querySelectorAll("[data-uf]").forEach(i=>i.onchange=async()=>{keep();busy(true);for(const f of i.files)uform[i.dataset.uf].push(await readFile(f));busy(false);drawUnplanned()});
  $("u_send").onclick=async()=>{keep();busy(true);try{DATA=await call("portalUnplanned",TOKEN,{po:uform.po,cntr:uform.cntr,sup:uform.sup,desc:uform.desc,plt:uform.plt,files:uform.doc.map(f=>({name:f.name,type:f.type,data:f.data})),loadFiles:uform.load.map(f=>({name:f.name,type:f.type,data:f.data}))});closeD();render();toast(t("u_sent"))}catch(e){toast(e.message)}busy(false)}}
 
-setLang(lang);load();
+// a session can end mid-shift (12 h limit, password reset): send the user back to sign in
+const _call=call;call=(...a)=>_call(...a).catch(e=>{if(e.message==="SESSION"&&a[0]!=="portalLoad"){signedOut("lg_exp")}throw e});
+$("logout").onclick=async()=>{const s=TOKEN;signedOut("");try{await _call("portalLogout",s)}catch(e){}};
+try{TOKEN=localStorage.getItem(SKEY)}catch(e){}
+setLang(lang);if(TOKEN)load();else showLogin("");
 </script>
 </body></html>

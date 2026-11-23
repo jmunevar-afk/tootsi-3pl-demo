@@ -46,20 +46,28 @@ Both deployments use the same code. Only "who has access" changes.
 2. Execute as: **Me**. Who has access: **Anyone**.
 3. Copy the URL. Paste it in the Config tab, key `PORTAL_URL`.
 
-Anyone opening the portal URL without a valid private code sees "access denied". The hub page also checks for a @tootsi.com account.
+Anyone opening the portal URL without signing in sees only the sign-in page. The hub only opens for a signed-in @tootsi.com Google account.
 
-## 4. Create the 3PL links
+## 4. Create the 3PL logins
 
-In the editor, run once per 3PL (edit the values first, or run from a small helper):
+Run once per 3PL in the editor (edit the values first):
 
 ```
-addThreePL('TP', 'Trans-Plus', 'receiving@transplus.example')
-addThreePL('DL', 'Deslauriers', 'receiving@deslauriers.example')
+addThreePL('TP', 'Trans-Plus', 'receiving@transplus.example', 'transplus')
+addThreePL('DL', 'Deslauriers', 'receiving@deslauriers.example', 'deslauriers')
 ```
 
-The private link appears in the execution log and in the **Users** tab. Send it to the 3PL receiving lead. They bookmark it on the dock phone. No Google account needed.
+The execution log shows the portal link, the username and a temporary password. Give the password by phone, not by email.
 
-To cut access later: set `active` to FALSE in the Users tab, or run `disableThreePL(token)`.
+How sign-in works:
+- **3PLs** open the portal link and sign in with username and password. They stay signed in for one shift (12 h, `SESSION_HOURS` in Config). Then they sign in again.
+- **5 wrong passwords** lock that username for 15 minutes.
+- **Tootsi staff** don't get a password. Google already knows who they are. Any @tootsi.com account opening either link goes straight to the hub. To see the 3PL screen yourself, add `?view=3pl` to the portal link.
+- Passwords are never stored. The Users tab keeps only a salted hash. Hide the Users and Sessions tabs anyway (right-click › Hide sheet).
+
+Managing logins:
+- Forgot password or a receiver left: `resetThreePLPassword('transplus')`. It signs out every open session.
+- Stop a 3PL completely: `disableThreePL('transplus')`.
 
 ## 5. Turn on the automatic jobs
 
@@ -100,6 +108,6 @@ When the pilot looks right, set `PILOT_ONLY_ME` to `no`, then `EMAIL_3PL` to `ye
 ## Privacy rules built in
 
 - The 3PL page only receives an allow-list of fields: PO, item, description, date, container, pallets, load type, 3PL instructions, colour level. No supplier, price, sales order, allocation, notes or Tootsi documents.
-- Each 3PL only sees its own POs. The server checks the private code on every call.
+- Each 3PL signs in with its own username and password, and only sees its own POs. The server checks the session on every call.
 - The count check only answers "matches" or "doesn't match". It never shows the expected quantity.
 - Files go to Tootsi's Drive. The 3PL never gets a Drive link.

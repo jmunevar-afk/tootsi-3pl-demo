@@ -2,14 +2,27 @@
 // Replaces Google services (Sheets, Drive, Mail, Session, Lock) with an in-memory store saved in localStorage.
 // Used for the local tests and the preview. NOT part of the Apps Script project.
 (function(){
-const KEY="pohub_gws_preview_v1";
+const KEY="pohub_gws_preview_v2";
 const pad=v=>String(v).padStart(2,"0");
 function mockNow(){if(window.MOCK_NOW)return new Date(window.MOCK_NOW);return new Date()}
 function ymd(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
 window.Utilities={
  formatDate:(d,tz,f)=>f==="H"?String(d.getHours()):f==="yyyy-MM-dd HH:mm"?ymd(d)+" "+pad(d.getHours())+":"+pad(d.getMinutes()):ymd(d),
  getUuid:()=>([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^Math.random()*16>>c/4).toString(16)),
- base64Decode:()=>[],newBlob:()=>({})};
+ base64Decode:()=>[],newBlob:()=>({}),
+ DigestAlgorithm:{SHA_256:"SHA_256"},Charset:{UTF_8:"UTF_8"},computeDigest:(alg,str)=>sha256(String(str))};
+// small synchronous SHA-256 (Apps Script's computeDigest is synchronous too)
+function sha256(str){const K=[],H=[];let n=2,c=0;const ip=x=>{for(let d=2;d*d<=x;d++)if(x%d===0)return false;return true},fr=x=>((x-Math.floor(x))*4294967296)|0;
+ while(c<64){if(ip(n)){if(c<8)H[c]=fr(Math.pow(n,1/2));K[c]=fr(Math.pow(n,1/3));c++}n++}
+ const b=Array.from(new TextEncoder().encode(str)),l=b.length*8;b.push(128);while(b.length%64!==56)b.push(0);for(let i=7;i>=0;i--)b.push(i>3?0:(l>>>(i*8))&255);
+ const r=(x,y)=>(x>>>y)|(x<<(32-y)),h=H.slice();
+ for(let o=0;o<b.length;o+=64){const w=[];for(let i=0;i<16;i++)w[i]=(b[o+i*4]<<24)|(b[o+i*4+1]<<16)|(b[o+i*4+2]<<8)|b[o+i*4+3];
+  for(let i=16;i<64;i++){const s0=r(w[i-15],7)^r(w[i-15],18)^(w[i-15]>>>3),s1=r(w[i-2],17)^r(w[i-2],19)^(w[i-2]>>>10);w[i]=(w[i-16]+s0+w[i-7]+s1)|0}
+  let [A,B,C,D,E,F,G,I]=h;for(let i=0;i<64;i++){const t1=(I+(r(E,6)^r(E,11)^r(E,25))+((E&F)^(~E&G))+K[i]+w[i])|0,t2=((r(A,2)^r(A,13)^r(A,22))+((A&B)^(A&C)^(B&C)))|0;I=G;G=F;F=E;E=(D+t1)|0;D=C;C=B;B=A;A=(t1+t2)|0}
+  [A,B,C,D,E,F,G,I].forEach((v,i)=>h[i]=(h[i]+v)|0)}
+ const out=[];h.forEach(v=>{for(let i=3;i>=0;i--){const x=(v>>>(i*8))&255;out.push(x>127?x-256:x)}});return out}
+window.MOCK_SHA=s=>sha256(s).map(x=>("0"+(x&255).toString(16)).slice(-2)).join("");
+const CACHE={};window.CacheService={getScriptCache:()=>({get:k=>CACHE[k]===undefined?null:CACHE[k],put:(k,v)=>{CACHE[k]=v},remove:k=>{delete CACHE[k]}})};
 window.Session={getActiveUser:()=>({getEmail:()=>window.MOCK_USER||""})};
 window.LockService={getScriptLock:()=>({waitLock(){},releaseLock(){}})};
 window.MOCK_MAIL=[];window.MailApp={sendEmail:o=>window.MOCK_MAIL.push(o)};
@@ -40,8 +53,8 @@ function seed(){
  Delays:[{delayId:"d1",id:"90204|10711",reason:"r_customs",note:"Container held at customs. Broker expects release in 2 days.",newDate:bd(2),by:"Deslauriers receiving",at:bd(-1)+" 15:30",date:bd(-1),closedAt:"",filesJson:[]}],
  Recounts:[],Docs:[{id:"90203|14015",cat:"Supplier packing list",name:"packing_list_90203.pdf",url:"#",by:"purchasing@tootsi.com",at:bd(-3)+" 10:00"}],
  SupplierQty:[{id:"90203|14015",kind:"pl",plt:20,cs:1600,lbs:44096,by:"Purchasing",at:bd(-3)+" 10:00"}],
- Users:[{token:"preview-tp-0123456789abcdef0123",wh:"TP",name:"Trans-Plus",email:"",active:true},{token:"preview-dl-0123456789abcdef0123",wh:"DL",name:"Deslauriers",email:"",active:true}],
- Config:Object.entries({DOMAIN:"tootsi.com",SLA_NUDGE_H:9,SLA_ESC_H:18,LB_TOLERANCE:0.01,QC_DAYS:2,HOLIDAYS:"",EMAIL_ON:"yes",PILOT_ONLY_ME:"yes",FALLBACK_EMAIL:"juan@tootsi.com",EMAIL_3PL:"no",LANG_TP:"fr",LANG_DL:"fr",DIGEST_TO:"juan@tootsi.com"}).map(([key,value])=>({key,value})),
+ Users:[{token:"u-tp-0000000000000000000000000001",wh:"TP",name:"Trans-Plus",email:"",active:true,user:"transplus",salt:"s1",passHash:window.MOCK_SHA("s1|demo-tp")},{token:"u-dl-0000000000000000000000000002",wh:"DL",name:"Deslauriers",email:"",active:true,user:"deslauriers",salt:"s2",passHash:window.MOCK_SHA("s2|demo-dl")}],Sessions:[],
+ Config:Object.entries({DOMAIN:"tootsi.com",SESSION_HOURS:12,SLA_NUDGE_H:9,SLA_ESC_H:18,LB_TOLERANCE:0.01,QC_DAYS:2,HOLIDAYS:"",EMAIL_ON:"yes",PILOT_ONLY_ME:"yes",FALLBACK_EMAIL:"juan@tootsi.com",EMAIL_3PL:"no",LANG_TP:"fr",LANG_DL:"fr",DIGEST_TO:"juan@tootsi.com"}).map(([key,value])=>({key,value})),
  Log:[]};
  save();
 }
@@ -55,6 +68,7 @@ window.readAll=name=>{const cols=TABLES[name];return (DB[name]||[]).map(r=>{cons
 window.append=(name,o)=>{const r={};TABLES[name].forEach(c=>{if(o[c]!==undefined)r[c]=clone(o[c]===null?"":o[c])});(DB[name]=DB[name]||[]).push(r);save()};
 window.upsert=(name,key,o)=>{const arr=DB[name]=DB[name]||[];const i=arr.findIndex(r=>String(r[key])===String(o[key]));const r=i>=0?arr[i]:{};TABLES[name].forEach(c=>{if(c in o&&c[0]!=="_")r[c]=clone(o[c]===undefined?"":o[c])});if(i<0)arr.push(r);save()};
 window.upsertWhere=(name,match,o)=>{const arr=DB[name]=DB[name]||[];const i=arr.findIndex(r=>match(r));if(i>=0)arr[i]=clone(o);else arr.push(clone(o));save()};
+window.deleteWhere=(name,match)=>{DB[name]=(DB[name]||[]).filter(r=>!match(r));save()};
 window.clearCache_=()=>{};
 window.saveFile_=(id,f)=>({name:f.name,url:"#preview-file",fileId:"x"});
 window.today_=()=>ymd(mockNow());

@@ -31,7 +31,7 @@ function setup() {
     HOLIDAYS: '2026-12-25,2026-12-28,2027-01-01,2027-04-02,2027-05-24,2027-06-24,2027-07-01,2027-09-06,2027-10-11',
     EMAIL_ON: 'no', PILOT_ONLY_ME: 'yes', FALLBACK_EMAIL: me, CC_ALWAYS: '', EMAIL_3PL: 'no',
     TEAM_Purchasing: '', TEAM_Logistics: '', TEAM_QC: '', TEAM_Receiving: '', TEAM_InventoryControl: me, TEAM_Fulfillment: '',
-    LANG_TP: 'fr', LANG_DL: 'fr', HUB_URL: '', PORTAL_URL: '',
+    LANG_TP: 'fr', LANG_DL: 'fr', SESSION_HOURS: 12, HUB_URL: '', PORTAL_URL: '',
     UPCOMING_SHEET_ID: '' /* paste the ID of the UPCOMING FTL FCL sheet */, UPCOMING_TAB: 'UPCOMING FTL FCL', DIGEST_TO: me
   };
   var have = config_();
@@ -39,18 +39,45 @@ function setup() {
   SpreadsheetApp.getUi && toastSafe_('Setup done. Next: addThreePL, then Deploy (two web apps).');
 }
 
-/** Create a private portal link for a 3PL. Example: addThreePL('TP', 'Trans-Plus', 'receiving@trans-plus.com') */
-function addThreePL(wh, name, email) {
+/**
+ * Create a 3PL login. Example: addThreePL('TP', 'Trans-Plus', 'receiving@trans-plus.com', 'transplus')
+ * The temporary password shows in the execution log. Give it to the 3PL by phone, not by email.
+ */
+function addThreePL(wh, name, email, user) {
   wh = wh || 'TP'; name = name || (wh === 'TP' ? 'Trans-Plus' : 'Deslauriers');
-  var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8);
-  append('Users', { token: token, wh: wh, name: name, email: email || '', active: true });
-  var url = (config_().PORTAL_URL || '<PORTAL_URL>') + '?k=' + token;
-  Logger.log('Private link for ' + name + ': ' + url);
-  return url;
+  user = String(user || (wh === 'TP' ? 'transplus' : 'deslauriers')).toLowerCase();
+  if (readAll('Users').some(function (r) { return String(r.user).toLowerCase() === user; })) throw new Error('Username already used: ' + user);
+  var token = Utilities.getUuid().replace(/-/g, '');
+  var pass = newPassword_(), salt = Utilities.getUuid();
+  append('Users', { token: token, wh: wh, name: name, email: email || '', active: true, user: user, salt: salt, passHash: hash_(salt, pass) });
+  Logger.log('3PL login for ' + name + ' → link: ' + (config_().PORTAL_URL || '<PORTAL_URL>') + ' · username: ' + user + ' · password: ' + pass);
+  return { user: user, password: pass };
 }
 
-/** Turn off a 3PL link (for example when a receiver leaves). */
-function disableThreePL(token) { var u = readAll('Users').filter(function (r) { return r.token === token; })[0]; if (u) { u.active = false; upsert('Users', 'token', u); } }
+/** New password for a 3PL login (forgotten password, or a receiver left). Old sessions are signed out. */
+function resetThreePLPassword(user) {
+  var u = readAll('Users').filter(function (r) { return String(r.user).toLowerCase() === String(user).toLowerCase(); })[0];
+  if (!u) throw new Error('No such username: ' + user);
+  var pass = newPassword_(); u.salt = Utilities.getUuid(); u.passHash = hash_(u.salt, pass); upsert('Users', 'token', u);
+  deleteWhere('Sessions', function (r) { return r.token === u.token; });
+  Logger.log('New password for ' + u.user + ': ' + pass);
+  return pass;
+}
+
+/** Turn off a 3PL login. It also signs out any open session. */
+function disableThreePL(user) {
+  var u = readAll('Users').filter(function (r) { return String(r.user).toLowerCase() === String(user).toLowerCase(); })[0];
+  if (!u) return;
+  u.active = false; upsert('Users', 'token', u);
+  deleteWhere('Sessions', function (r) { return r.token === u.token; });
+}
+
+function newPassword_() {
+  var ch = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789', p = '';
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Date.now());
+  for (var i = 0; i < 12; i++) p += ch[(bytes[i] & 255) % ch.length];
+  return p;
+}
 
 function installTriggers() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });

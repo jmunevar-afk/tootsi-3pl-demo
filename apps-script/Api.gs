@@ -11,12 +11,54 @@ function hubUser_() {
   if (!email || email.split('@')[1] !== dom) throw new Error('Access denied. Sign in with your @' + dom + ' Google account.');
   return email;
 }
-function tplUser_(token) {
-  var t = String(token || '');
-  if (t.length < 20) throw new Error('Invalid link.');
-  var u = readAll('Users').filter(function (r) { return r.token === t && truthy(r.active); })[0];
-  if (!u) throw new Error('This link is not active. Contact Tootsi Inventory Control.');
+/**
+ * 3PL access. A 3PL signs in with a username and password (Users tab).
+ * The server gives back a session code that lasts SESSION_HOURS (default 12 h, one shift).
+ * Every portal call sends that code. The server checks it each time, so nobody can ask for another 3PL's data.
+ */
+function tplUser_(sid) {
+  var t = String(sid || '');
+  if (t.length < 20) throw new Error('SESSION');
+  var now = Date.now();
+  var s = readAll('Sessions').filter(function (r) { return r.sid === t && Number(r.expires) > now; })[0];
+  if (!s) throw new Error('SESSION');
+  var u = readAll('Users').filter(function (r) { return r.token === s.token && truthy(r.active); })[0];
+  if (!u) throw new Error('SESSION');
   return u; // {wh, name, email}
+}
+
+function hash_(salt, pass) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + '|' + pass, Utilities.Charset.UTF_8)
+    .map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join('');
+}
+
+/** Sign in. Returns a session code. 5 wrong passwords lock the username for 15 minutes. */
+function portalLogin(user, pass) {
+  var key = 'fail_' + String(user || '').toLowerCase().trim(), cache = CacheService.getScriptCache();
+  var fails = Number(cache.get(key) || 0);
+  if (fails >= 5) throw new Error('LOCKED');
+  var u = readAll('Users').filter(function (r) { return truthy(r.active) && r.user && String(r.user).toLowerCase() === String(user || '').toLowerCase().trim(); })[0];
+  if (!u || !u.passHash || hash_(u.salt, String(pass || '')) !== u.passHash) {
+    cache.put(key, String(fails + 1), 900);
+    throw new Error('BADLOGIN');
+  }
+  cache.remove(key);
+  var sid = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  var hours = Number(config_().SESSION_HOURS || 12);
+  return withLock_(function () {
+    // drop expired sessions so the tab stays small
+    var now = Date.now();
+    deleteWhere('Sessions', function (r) { return Number(r.expires) < now; });
+    append('Sessions', { sid: sid, token: u.token, expires: now + hours * 3600000, at: nowStamp_() });
+    u.lastLogin = nowStamp_(); upsert('Users', 'token', u);
+    logAction_(u.name, 'login', '', '');
+    return { sid: sid, wh: u.wh, name: u.name, lang: String(config_()['LANG_' + u.wh] || 'fr') };
+  });
+}
+
+function portalLogout(sid) {
+  withLock_(function () { deleteWhere('Sessions', function (r) { return r.sid === sid; }); });
+  return true;
 }
 
 // ---------- state ----------
@@ -251,5 +293,5 @@ function notify3pl_(p, kind, ctx) {
   var u = readAll('Users').filter(function (r) { return r.wh === p.wh && truthy(r.active) && r.email; })[0]; if (!u) return;
   var fr = String(cfg['LANG_' + p.wh] || 'fr') === 'fr';
   var subj = kind === 'recount' ? (fr ? 'Tootsi demande un recompte · PO ' : 'Tootsi asks for a recount · PO ') : (fr ? 'Rappel de réception · PO ' : 'Receiving reminder · PO ');
-  MailApp.sendEmail({ to: u.email, subject: subj + p.po, body: (fr ? 'Ouvrez votre portail Tootsi pour recevoir ou signaler un retard : ' : 'Open your Tootsi portal to receive or report a delay: ') + (cfg.PORTAL_URL || '') + '?k=' + u.token });
+  MailApp.sendEmail({ to: u.email, subject: subj + p.po, body: (fr ? 'Ouvrez votre portail Tootsi pour recevoir ou signaler un retard : ' : 'Open your Tootsi portal to receive or report a delay: ') + (cfg.PORTAL_URL || '') });
 }
