@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="<?= lang ?>">
+<head><base target="_top"><meta charset="utf-8"><?!= include('Styles') ?></head>
+<body>
+<header>
+  <?!= include('Logo') ?>
+  <div><h1 id="ttl">3PL <span>Portal</span></h1><div class="hsub" id="sub"></div></div>
+  <div class="who"><div class="lang" role="group" aria-label="Language"><button type="button" data-lang="en">EN</button><button type="button" data-lang="fr">FR</button></div><div class="nm"><div style="font-weight:500"><?= name ?></div></div></div>
+</header>
+<main id="main"><div class="loading">…</div></main>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dtitle" tabindex="-1"></aside>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="busy" id="busy" aria-live="polite">…</div>
+<?!= include('Client') ?>
+<?!= include('Lang') ?>
+<?!= include('Receive') ?>
+<script>
+const TOKEN=<?!= JSON.stringify(token) ?>, WH=<?!= JSON.stringify(wh) ?>, NAME=<?!= JSON.stringify(name) ?>;
+let lang=<?!= JSON.stringify(lang) ?>;try{lang=localStorage.getItem("tootsi_lang")||lang}catch(e){}
+const t=k=>(L[lang]&&L[lang][k])||L.en[k]||k;
+const CONDS=[["Good","✅","c_Good"],["Shifted load","↔️","c_Shifted"],["Collapsed pallets","⬇️","c_Collapsed"],["Double-stacked","⏫","c_Double"],["Torn / leaking bags","🩹","c_Torn"],["Wet / dirty","💧","c_Wet"],["Other","❓","c_Other"]];
+const REASONS=["r_notarr","r_customs","r_docs","r_seal","r_wrong","r_dmg","r_dock","r_other"];
+const LOAD_FR={"Palletized":"sur palettes","Floor loaded":"en vrac au plancher","FTL":"Camion complet","LTL":"Camion partiel","FCL 40'":"Conteneur 40 pi","FCL 20'":"Conteneur 20 pi"};
+const loadTxt=s=>lang==="fr"?String(s||"").split(" · ").map(x=>LOAD_FR[x.trim()]||x).join(" · "):s;
+const ICON={up:"⚪",tom:"🔵",due:"🟡",nudge:"🟠",esc:"🔴",paused:"⏸"};
+let DATA=null,tab="todo";
+
+function setLang(l){lang=l;try{localStorage.setItem("tootsi_lang",l)}catch(e){}document.documentElement.lang=l;LOCALE=l==="fr"?"fr-CA":"en-CA";
+ document.querySelectorAll("[data-lang]").forEach(b=>{b.classList.toggle("on",b.dataset.lang===l);b.setAttribute("aria-pressed",b.dataset.lang===l)});
+ $("ttl").innerHTML=l==="fr"?'Portail <span>3PL</span>':'3PL <span>Portal</span>';$("sub").textContent=t("portal_sub");if(DATA)render()}
+document.querySelectorAll("[data-lang]").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
+
+async function load(){try{DATA=await call("portalLoad",TOKEN);render()}catch(e){$("main").innerHTML=`<div class="err">${esc(e.message)}</div>`}}
+const slaPill=r=>r.sla?`<span class="sla sla-${r.sla.lvl}"><span aria-hidden="true">${ICON[r.sla.lvl]}</span> ${esc(t("sla_"+r.sla.lvl))}</span>`:"";
+
+function render(){
+ const rows=DATA.rows,todo=rows.filter(r=>!r.sent),done=rows.filter(r=>r.sent);
+ const lv=r=>r.sla&&r.sla.lvl;
+ const req=todo.filter(r=>r.req),rest=todo.filter(r=>!r.req);
+ const late=rest.filter(r=>["esc","nudge"].includes(lv(r))),paused=rest.filter(r=>lv(r)==="paused"),today=rest.filter(r=>lv(r)==="due"),tom=rest.filter(r=>lv(r)==="tom"),later=rest.filter(r=>!lv(r)||lv(r)==="up");
+ const card=r=>`<div class="pocard lvl-${r.sent?"none":(lv(r)||"none")}"><button type="button" class="po ${r.req?"req":""}" data-po="${esc(r.id)}">
+   <div><div class="big mono">PO ${esc(r.po)}${r.cntr?` <span style="font-weight:500;color:var(--muted);font-size:15px">· ${esc(r.cntr)}</span>`:""}</div>
+   <div class="m">${esc(r.desc)} · ${fmt(r.plt)} ${t("pallets")} · ${esc(loadTxt(r.load))}</div><div class="m">${t("expected")}${t("colon")} <b style="color:var(--ink)">${fd(r.eta)}</b></div>
+   ${!r.sent?`<div style="margin-top:6px">${slaPill(r)}</div>`:""}${r.delay?`<div class="m" style="color:#5b3a91;margin-top:4px">⏸ ${esc(t(r.delay.reason))}${r.delay.newDate?" · "+t("d_new")+t("colon")+" "+fds(r.delay.newDate):""}</div>`:""}</div>
+   ${r.sent?`<span class="pill ${r.sent.damage?"p-dmg":"p-done"}">${r.sent.damage?t("sent_issue"):t("sent")}</span>`:`<span class="go">${r.req?t("recount_req"):t("receive")} →</span>`}</button>
+   ${!r.sent?`<button type="button" class="delaybtn" data-delay="${esc(r.id)}">${r.delay?t("d_solve"):t("delay_btn")}</button>`:""}</div>`;
+ const grp=(title,arr,color)=>arr.length?`<div class="group" ${color?`style="color:${color}"`:""}>${title}</div>${arr.map(card).join("")}`:"";
+ const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+ const counts=[late.length?`<b style="color:#b0182f">${late.length}</b> ${t("late_n")}`:"",today.length?`<b>${today.length}</b> ${t("today")}`:"",`<b>${todo.length}</b> ${t("toRecv")}`,req.length?`<b style="color:var(--amber)">${req.length}</b> ${t("recounts")}`:""].filter(Boolean).join(" · ");
+ $("main").innerHTML=`<div class="hello"><h2 tabindex="-1">${t("hi")}, ${lang==="fr"?t("team")+" "+esc(NAME):esc(NAME)+" "+t("team")}</h2><p>${t("tap")}</p></div>
+ <p class="slarule">⏱ ${t("sla_rule")}</p><p class="chip-line">${counts}</p>
+ <button type="button" class="unpl" id="unpl">${t("unpl_btn")}</button>
+ <div class="tabs"><button type="button" aria-pressed="${tab==="todo"}" data-t2="todo" class="${tab==="todo"?"on":""}">${t("tab_todo")} (${todo.length})</button><button type="button" aria-pressed="${tab==="done"}" data-t2="done" class="${tab==="done"?"on":""}">${t("tab_done")} (${done.length})</button></div>
+ <div class="list">${tab==="todo"?(todo.length?grp(t("g_recount"),req,"var(--amber)")+grp(cap(t("late_n")),late,"#b0182f")+grp(t("g_today"),today)+grp(t("sla_paused"),paused,"#5b3a91")+grp(t("g_tom"),tom)+grp(t("g_later"),later):`<div class="empty">${t("empty_todo")}</div>`):(done.length?done.map(card).join(""):`<div class="empty">${t("empty_done")}</div>`)}</div>`;
+ document.querySelectorAll("[data-t2]").forEach(b=>b.onclick=()=>{tab=b.dataset.t2;render()});
+ document.querySelectorAll(".po").forEach(el=>el.onclick=()=>{const r=DATA.rows.find(x=>x.id===el.dataset.po);r.sent?showSent(r):openReceive(r)});
+ document.querySelectorAll("[data-delay]").forEach(b=>b.onclick=()=>openDelay(DATA.rows.find(x=>x.id===b.dataset.delay)));
+ $("unpl").onclick=openUnplanned;
+}
+
+const RCV={check:(r,c)=>call("portalCheck",TOKEN,r.id,c),submit:(r,pl)=>call("portalSubmit",TOKEN,r.id,pl),after:(r,next)=>{if(next)tab="todo";load()}};
+function showSent(r){const s=r.sent,q=o=>`${fmt(o.plt)} ${t("u_plt")} / ${fmt(o.cs)} ${t("u_cs")}${o.lbs!==""&&o.lbs!=null?" / "+fmt(o.lbs)+" "+t("u_lb"):""}`;
+ openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><div class="dsub">${t("ro")} · ${esc(s.at)}</div><h2 class="mono" id="dtitle" tabindex="-1">PO ${esc(r.po)}</h2><div>${esc(r.item)} · ${esc(r.desc)}</div></div>
+ <div class="db"><div class="sec"><div class="grid2 box"><span class="k">${t("date")}</span><span>${fd(s.recv)}</span>
+  ${s.first?`<span class="k">${t("first_c")}</span><span class="mono">${q(s.first)}</span><span class="k">${t("recount_c")}</span><span class="mono">${q(s)}</span>`:`<span class="k">${t("final_c")}</span><span class="mono">${q(s)}</span>`}
+  ${s.diffNote?`<span class="k">${t("note_c")}</span><span>${esc(s.diffNote)}</span>`:""}<span class="k">${t("lot")}</span><span class="mono">${esc(s.lot)}</span><span class="k">${t("exp")}</span><span>${fdy(s.exp)}</span>
+  <span class="k">${t("cond")}</span><span style="${s.damage?"color:#b0182f":""}">${esc(t((CONDS.find(c=>c[0]===s.cond)||[,,s.cond])[2]))}${s.damage?" · "+esc(s.dmgText):""}</span>${s.comment?`<span class="k">${t("your_com")}</span><span>${esc(s.comment)}</span>`:""}</div></div>
+  ${s.files.length?`<div class="sec small">${s.files.map(f=>"📎 "+esc(f.cat)+" · "+esc(f.name)).join("<br>")}</div>`:""}
+  <div class="sec"><div class="note">${t("ro_change")}</div></div></div>`)}
+
+// ---------- delays ----------
+let dform;
+function openDelay(r){cur=r;
+ if(r.delay){openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><div class="dsub">${t("d_cur")}</div><h2 class="mono" id="dtitle" tabindex="-1">PO ${esc(r.po)}</h2><div class="dsub">${esc(t(r.delay.reason))}</div></div>
+  <div class="db"><div class="sec"><p style="font-size:15px">${t("d_solve_q")}</p><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="btn" id="dy" style="min-height:52px;flex:1">${t("yes")}</button><button type="button" class="btn ghost" id="dn" style="min-height:52px;flex:1">${t("no")}</button></div></div></div>`);
+  $("dn").onclick=closeD;$("dy").onclick=async()=>{busy(true);try{DATA=await call("portalSolveDelay",TOKEN,r.id);closeD();render();toast(t("d_closed"))}catch(e){toast(e.message)}busy(false)};return}
+ dform={reason:"",note:"",newDate:"",pics:[]};drawDelay()}
+function drawDelay(){const r=cur,miss=!dform.reason?t("d_miss_r"):dform.note.trim().length<5?t("d_miss_n"):"";
+ openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><div class="dsub">${t("delay_h")}</div><h2 class="mono" id="dtitle" tabindex="-1">PO ${esc(r.po)}</h2><div class="dsub">${esc(r.desc)} · ${t("expected")} ${fd(r.eta)}${r.cntr?" · "+esc(r.cntr):""}</div></div>
+ <div class="db"><p style="font-size:14px">${t("delay_p")}</p><div class="step"><h4>${t("d_reason")}</h4><div class="cond" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">${REASONS.map(x=>`<button type="button" data-rs="${x}" aria-pressed="${dform.reason===x}" class="${dform.reason===x?"on":""}">${t(x)}</button>`).join("")}</div></div>
+  <div class="step"><label for="d_note" style="font-size:16px">${t("d_note")}</label><textarea id="d_note" rows="3" placeholder="${esc(t("d_note_ph"))}">${esc(dform.note)}</textarea>
+   <div style="margin-top:10px"><label for="d_new">${t("d_new")}</label><input class="in big-in" type="date" id="d_new" min="${DATA.today}" value="${esc(dform.newDate)}"></div>
+   <label class="drop" style="margin-top:10px"><input type="file" accept="image/*,application/pdf" capture="environment" multiple id="d_pic">${t("d_pic")}</label>${thumbs(dform.pics)}</div></div>
+ <div class="foot"><div class="prog" id="dmiss">${miss?`<span style="color:#b0182f;font-weight:600">${t("d_miss")}${t("colon")} ${miss}</span>`:""}</div><button type="button" class="btn" id="d_send" ${miss?"disabled":""}>${t("d_send")}</button></div>`);
+ const chk=()=>{const m=!dform.reason?t("d_miss_r"):dform.note.trim().length<5?t("d_miss_n"):"";$("d_send").disabled=!!m;$("dmiss").innerHTML=m?`<span style="color:#b0182f;font-weight:600">${t("d_miss")}${t("colon")} ${m}</span>`:""};
+ document.querySelectorAll("[data-rs]").forEach(b=>b.onclick=()=>{dform.reason=b.dataset.rs;dform.note=$("d_note").value;dform.newDate=$("d_new").value;drawDelay()});
+ $("d_note").oninput=e=>{dform.note=e.target.value;chk()};$("d_new").oninput=e=>{dform.newDate=e.target.value};
+ $("d_pic").onchange=async e=>{busy(true);for(const f of e.target.files)dform.pics.push(await readFile(f));busy(false);dform.note=$("d_note").value;drawDelay()};
+ $("d_send").onclick=async()=>{busy(true);try{DATA=await call("portalDelay",TOKEN,r.id,{reason:dform.reason,note:$("d_note").value,newDate:$("d_new").value,files:dform.pics.map(f=>({name:f.name,type:f.type,data:f.data}))});closeD();render();toast(t("d_sent"))}catch(e){toast(e.message)}busy(false)}}
+
+// ---------- PO arrived that is not on the list ----------
+let uform;
+function openUnplanned(){uform={po:"",cntr:"",sup:"",desc:"",plt:"",doc:[],load:[]};drawUnplanned()}
+function drawUnplanned(){const ok=uform.doc.length&&uform.desc.trim();
+ openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><h2 id="dtitle" tabindex="-1">${t("unpl_h")}</h2></div>
+ <div class="db"><p style="font-size:14px">${t("unpl_p")}</p><div class="step"><label class="drop"><input type="file" accept="image/*,application/pdf" capture="environment" multiple data-uf="doc">${t("u_doc")}</label>${thumbs(uform.doc)}
+  <label class="drop" style="margin-top:10px"><input type="file" accept="image/*" capture="environment" multiple data-uf="load">${t("u_load")}</label>${thumbs(uform.load)}</div>
+  <div class="step"><div class="row r2"><div><label for="u_po">${t("u_po")}</label><input class="in big-in" id="u_po" inputmode="numeric" value="${esc(uform.po)}"></div><div><label for="u_cntr">${t("u_cntr")}</label><input class="in big-in" id="u_cntr" value="${esc(uform.cntr)}"></div></div>
+  <div style="margin-top:10px"><label for="u_desc">${t("u_desc")}</label><input class="in big-in" id="u_desc" value="${esc(uform.desc)}"></div>
+  <div class="row r2" style="margin-top:10px"><div><label for="u_sup">${t("u_sup")}</label><input class="in big-in" id="u_sup" value="${esc(uform.sup)}"></div><div><label for="u_plt">${t("u_plts")}</label><input class="in big-in" id="u_plt" type="number" inputmode="numeric" min="0" value="${esc(uform.plt)}"></div></div></div></div>
+ <div class="foot"><div class="prog">${ok?"":`<span style="color:#b0182f;font-weight:600">${t("u_miss")}</span>`}</div><button type="button" class="btn" id="u_send" ${ok?"":"disabled"}>${t("u_send")}</button></div>`);
+ const keep=()=>["po","cntr","sup","desc","plt"].forEach(k=>uform[k]=$("u_"+k).value);
+ ["po","cntr","sup","desc","plt"].forEach(k=>$("u_"+k).oninput=()=>{keep();$("u_send").disabled=!(uform.doc.length&&uform.desc.trim())});
+ document.querySelectorAll("[data-uf]").forEach(i=>i.onchange=async()=>{keep();busy(true);for(const f of i.files)uform[i.dataset.uf].push(await readFile(f));busy(false);drawUnplanned()});
+ $("u_send").onclick=async()=>{keep();busy(true);try{DATA=await call("portalUnplanned",TOKEN,{po:uform.po,cntr:uform.cntr,sup:uform.sup,desc:uform.desc,plt:uform.plt,files:uform.doc.map(f=>({name:f.name,type:f.type,data:f.data})),loadFiles:uform.load.map(f=>({name:f.name,type:f.type,data:f.data}))});closeD();render();toast(t("u_sent"))}catch(e){toast(e.message)}busy(false)}}
+
+setLang(lang);load();
+</script>
+</body></html>
