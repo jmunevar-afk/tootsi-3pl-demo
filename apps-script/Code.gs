@@ -32,6 +32,12 @@ function page_(name, vars) {
 }
 
 /** Used inside HTML templates: <?!= include('Styles') ?> */
+/** The receiving form code, sent as data (fallback if the page builder damaged the inline copy). Public page code only. */
+function clientCode(name) {
+  if (['Receive'].indexOf(name) < 0) throw new Error('Not available.');
+  var h = include(name), m = h.match(/<script[^>]*>([\s\S]*)<\/script>/);
+  return m ? m[1] : '';
+}
 function include(name) {
   return typeof HTML_FILES !== 'undefined' ? HTML_FILES[name] : HtmlService.createHtmlOutputFromFile(name).getContent();
 }

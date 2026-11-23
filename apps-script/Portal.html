@@ -51,7 +51,7 @@ function setLang(l){lang=l;try{localStorage.setItem("tootsi_lang",l)}catch(e){}d
  $("ttl").innerHTML=l==="fr"?'Portail <span>3PL</span>':'3PL <span>Portal</span>';$("sub").textContent=t("portal_sub");$("logout").textContent=t("logout");if(!TOKEN)showLogin(loginMsg);else if(DATA)render()}
 document.querySelectorAll("[data-lang]").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
 
-async function load(){try{DATA=await call("portalLoad",TOKEN);WH=DATA.wh;NAME=DATA.name;$("pname").textContent=NAME;$("logout").style.display="";render()}catch(e){if(e.message==="SESSION")return signedOut("lg_exp");$("main").innerHTML=`<div class="err">${esc(e.message)}</div>`}}
+async function load(){try{ensureReceive(i=>call("portalDiag",TOKEN,i));DATA=await call("portalLoad",TOKEN);WH=DATA.wh;NAME=DATA.name;$("pname").textContent=NAME;$("logout").style.display="";render()}catch(e){if(e.message==="SESSION")return signedOut("lg_exp");$("main").innerHTML=`<div class="err">${esc(e.message)}</div>`}}
 // ---------- sign in ----------
 let loginMsg="";
 const SKEY="tootsi_3pl_session";
@@ -109,7 +109,7 @@ function render(){
  <div class="tabs"><button type="button" aria-pressed="${tab==="todo"}" data-t2="todo" class="${tab==="todo"?"on":""}">${t("tab_todo")} (${shipments(todoL).length})</button><button type="button" aria-pressed="${tab==="done"}" data-t2="done" class="${tab==="done"?"on":""}">${t("tab_done")} (${done.length})</button></div>
  <div class="list">${tab==="todo"?(todo.length?grp(t("g_recount"),req,"var(--amber)")+grp(cap(t("late_n")),late,"#b0182f")+grp(t("g_today"),today)+grp(t("sla_paused"),paused,"#5b3a91")+grp(t("g_tom"),tom)+grp(t("g_later"),later):`<div class="empty">${t("empty_todo")}</div>`):(done.length?done.map(card).join(""):`<div class="empty">${t("empty_done")}</div>`)}</div>`;
  document.querySelectorAll("[data-t2]").forEach(b=>b.onclick=()=>{tab=b.dataset.t2;render()});
- document.querySelectorAll(".po").forEach(el=>el.onclick=()=>{const r=DATA.rows.find(x=>x.id===el.dataset.po);r.sent?showSent(r):openReceive(r)});
+ document.querySelectorAll(".po").forEach(el=>el.onclick=async()=>{const r=DATA.rows.find(x=>x.id===el.dataset.po);if(r.sent)return showSent(r);if(!(await ensureReceive(i=>call("portalDiag",TOKEN,i))))return toast(t("up_err"));openReceive(r)});
  const pq=$("pq");pq.oninput=e=>{q=e.target.value;clearTimeout(pq.t);pq.t=setTimeout(()=>{render();const n=$("pq");n.focus();n.setSelectionRange(n.value.length,n.value.length)},250)};
  document.querySelectorAll("[data-delay]").forEach(b=>b.onclick=()=>openDelay(DATA.rows.find(x=>x.id===b.dataset.delay)));
  document.querySelectorAll("[data-slip]").forEach(b=>b.onclick=async()=>{busy(true);try{openFile(await call("portalSlip",TOKEN,b.dataset.slip),t("open"))}catch(e){toast(errT(e.message))}busy(false)});

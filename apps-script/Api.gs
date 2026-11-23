@@ -57,6 +57,17 @@ function portalLogin(user, pass) {
   });
 }
 
+/** The page reports where its code was damaged (written to the Log tab, at most 5 times an hour). */
+function portalDiag(token, info) {
+  var u = tplUser_(token); diagLog_(u.name, info); return true;
+}
+function hubDiag(info) {
+  var me = hubUser_(); diagLog_(me, info); return true;
+}
+function diagLog_(who, info) {
+  var c = CacheService.getScriptCache(), n = Number(c.get('diag') || 0); if (n >= 5) return; c.put('diag', String(n + 1), 3600);
+  logAction_(who, 'page-diag', '', String(info || '').slice(0, 1500));
+}
 function portalLogout(sid) {
   try { tplUser_(sid); } catch (e) { return true; } // only a valid session can be signed out
   withLock_(function () { deleteWhere_('Sessions', function (r) { return r.sid === sid; }); });

@@ -11,6 +11,17 @@ const fdy=d=>d?new Date(String(d).slice(0,10)+"T12:00").toLocaleDateString(LOCAL
 const addDays=(d,n)=>{const x=new Date(d+"T12:00");x.setDate(x.getDate()+n);const p=v=>String(v).padStart(2,"0");return x.getFullYear()+"-"+p(x.getMonth()+1)+"-"+p(x.getDate())};
 const daysBetween=(a,b)=>Math.round((new Date(String(b).slice(0,10)+"T12:00")-new Date(String(a).slice(0,10)+"T12:00"))/864e5);
 
+/** If the receiving form code did not load inline, load it from the server and report what was damaged. */
+async function ensureReceive(diag){
+ if(typeof openReceive==="function")return true;
+ try{
+  const code=await call("clientCode","Receive"),el=document.getElementById("rcvjs"),got=el?el.textContent:"(missing)";
+  let i=0;while(i<code.length&&i<got.length&&code[i]===got[i])i++;
+  const info="inline receive code damaged at char "+i+" of "+code.length+". sent: "+JSON.stringify(code.slice(Math.max(0,i-60),i+60))+" got: "+JSON.stringify(got.slice(Math.max(0,i-60),i+60))+" ua: "+navigator.userAgent.slice(0,80);
+  console.warn(info);try{if(diag)await diag(info)}catch(e){}
+  const s=document.createElement("script");s.textContent=code;document.body.appendChild(s);
+  return typeof openReceive==="function";
+ }catch(e){console.error(e);return false}}
 /** Call a server function: await call("portalLoad", token) */
 function call(fn,...args){return new Promise((res,rej)=>{google.script.run.withSuccessHandler(res).withFailureHandler(e=>rej(e&&e.message?e:new Error(String(e))))[fn](...args)})}
 function busy(on){const b=$("busy");if(b)b.classList.toggle("on",!!on)}

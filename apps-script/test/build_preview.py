@@ -30,7 +30,9 @@ def bar(active):
 def inject(html, active, user):
     # The server code runs in its own hidden frame, like Apps Script runs on Google's servers.
     # This keeps server and page names apart. google.script.run forwards calls to that frame.
-    boot = "window.MOCK_USER=%s;%s" % (json.dumps(user), ("window.MOCK_NOW=%s;" % json.dumps(fixed_now)) if fixed_now else "")
+    import re as _re
+    rcv = _re.search(r"<script[^>]*>([\s\S]*)</script>", read("Receive.html")).group(1)
+    boot = "window.clientCode=function(n){if(n!=='Receive')throw new Error('Not available.');return %s};window.MOCK_USER=%s;%s" % (json.dumps(rcv), json.dumps(user), ("window.MOCK_NOW=%s;" % json.dumps(fixed_now)) if fixed_now else "")
     srv = json.dumps("<script>" + boot + "</scr"+"ipt><script>" + server + "\n</scr"+"ipt><script>" + mock + "\n</scr"+"ipt>").replace("</", "<\\/")
     shim = """<script>(function(){var fr=document.createElement('iframe');fr.style.display='none';fr.title='server';document.documentElement.appendChild(fr);
 var d=fr.contentDocument;d.open();d.write(%s);d.close();var S=fr.contentWindow;window.MOCK=function(){return S};

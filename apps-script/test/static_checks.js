@@ -22,7 +22,7 @@ function reaches(n, seen = new Set()) {
   return (reach[n] = calls.some(c => reaches(c, seen)));
 }
 const GUARD = /^\s*function [^{]+\{\s*(?:\/\/[^\n]*\n\s*)*(?:var \w+ = )?(hubUser_|tplUser_|requireOwner_)\([^)]*\)\s*[;,]/;
-const EXEMPT = { doGet: 'routes after checking the Google account', include: 'returns page HTML only', portalLogin: 'is the login itself', portalLogout: 'only deletes the session it is given, after checking it' };
+const EXEMPT = { doGet: 'routes after checking the Google account', include: 'returns page HTML only', portalLogin: 'is the login itself', portalLogout: 'only deletes the session it is given, after checking it', clientCode: 'returns only the public receiving-form page code (allow-list)' };
 const pub = starts.map(s => s.name).filter(n => !/_$/.test(n));
 const exposed = pub.filter(n => reaches(n) && !EXEMPT[n] && !GUARD.test(bodies[n]));
 ok('every browser-callable function that reaches data checks the caller first', exposed.length === 0, exposed);
