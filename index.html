@@ -159,6 +159,24 @@ textarea:focus,.in:focus{border-color:var(--blue)}
 .done-screen{text-align:center;padding:40px 10px}
 .done-screen .ok{width:76px;height:76px;border-radius:50%;background:var(--green);color:#fff;font-size:40px;display:grid;place-items:center;margin:0 auto 16px}
 .done-screen h2{margin:0 0 6px}
+
+/* receiving clock colors (like the 3PL master) */
+.sla{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:500;padding:3px 9px;border-radius:12px;white-space:nowrap}
+.sla-up{background:#f1f1ee;color:#55595d}.sla-ok,.sla-due{background:#fff6cc;color:#7a5a00}.sla-nudge{background:#ffe2c2;color:#9a4a00}.sla-esc{background:#fbd5da;color:#a3132b}.sla-paused{background:#efe7f7;color:#5b3a91}
+tr.lvl-due td{background:#fffcee}tr.lvl-nudge td{background:#fff4e8}tr.lvl-esc td{background:#fdeef0}tr.lvl-paused td{background:#faf6fd}
+tr.lvl-due td:first-child{box-shadow:inset 4px 0 0 #f2c200}tr.lvl-nudge td:first-child{box-shadow:inset 4px 0 0 #f08a00}tr.lvl-esc td:first-child{box-shadow:inset 4px 0 0 #d71f3c}tr.lvl-paused td:first-child{box-shadow:inset 4px 0 0 #8a5cc2}
+tr.lvl-esc td:first-child{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:inset 8px 0 0 #d71f3c}}
+@media (prefers-reduced-motion:reduce){tr.lvl-esc td:first-child,.pocard.lvl-esc .po{animation:none}}
+.legend{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--muted);margin:0 0 10px}
+.pocard{display:grid;gap:0}
+.pocard.lvl-due .po{border-left:6px solid #f2c200}.pocard.lvl-nudge .po{border-left:6px solid #f08a00;background:#fffaf3}.pocard.lvl-esc .po{border-left:6px solid #d71f3c;background:#fff6f7;animation:pulsecard 1.6s ease-in-out infinite}.pocard.lvl-paused .po{border-left:6px solid #8a5cc2}
+@keyframes pulsecard{50%{box-shadow:0 0 0 4px rgba(215,31,60,.18)}}
+.pocard .po{border-bottom-left-radius:0;border-bottom-right-radius:0}
+.delaybtn{border:1px solid var(--line);border-top:none;background:#fafaf8;border-radius:0 0 14px 14px;min-height:46px;cursor:pointer;font-size:14px;color:#5b3a91;font-weight:500}
+.delaybtn:hover{background:#f6f0fc}
+.slarule{font-size:13px;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 12px}
+.card.lvl-due{background:#fffcee;border-color:#f2c200}.card.lvl-nudge{background:#fff4e8;border-color:#f08a00}.card.lvl-esc{background:#fdeef0;border-color:#d71f3c}
 /* toast */
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .2s;z-index:60;pointer-events:none;max-width:90vw}
 .toast.show{opacity:1}
@@ -276,7 +294,7 @@ en:{lg_tag:"Every PO. Every document. One place.",lg_p:"Purchasing, Fulfillment,
  pallets:"pallets",expected:"Expected",
  r_for:"Receiving for Tootsi",r_req:"Tootsi asked for a recount. Please count the full load again.",
  s1:"Photo of the load before unloading",s1p:"Open the trailer or container. Take a photo before touching anything.",s1b:"📷 Take photo of the load",
- s2:"Count what you received",s2p:"Count every case and weigh the load.",s2pf:"Floor-loaded: count every bag or case, then the pallets you built.",
+ s2:"Count what you received",s2p:"Count every pallet and case. Net weight is optional.",lbo:"Net lb (optional)",s2pf:"Floor-loaded: count every bag or case, then the pallets you built.",
  date:"Date received",plt:"Pallets",pltb:"Pallets built",cs:"Cases",lb:"Net lb",
  s2r:"Count again",s2rp:"Your count is different from the PO. Count the full load again, then enter the new numbers.",s2r_saved:"First count saved.",
  s2n:"Still different after the recount. Write what you found. Purchasing will be alerted.",s2n_ph:"e.g. Recounted twice. 20 cases short on pallet 7.",
@@ -288,7 +306,13 @@ en:{lg_tag:"Every PO. Every document. One place.",lg_p:"Purchasing, Fulfillment,
  of:"of",done_w:"done",missing:"Missing",send:"Send to Tootsi",
  m1:"load photo",m2:"count",m2r:"recount",m2n:"note on difference",m3:"label photo, lot and expiry",m4:"receiving document",m5:"load condition",m5n:"damage note and photos",
  done_h:"Sent to Tootsi",done_p:"Purchasing was alerted about the difference.",done_ok:"Thank you. Everyone at Tootsi can see it now.",next:"Next delivery",
- ro:"Sent",ro_change:"To change something, contact Tootsi Inventory Control.",your_com:"Your comment",cond:"Condition"},
+ ro:"Sent",ro_change:"To change something, contact Tootsi Inventory Control.",your_com:"Your comment",cond:"Condition",
+ sla_ok:"On time",sla_due:"Receive today",sla_nudge:"Overdue",sla_esc:"Escalated",sla_up:"Upcoming",sla_paused:"Delay reported",bh:"business h",
+ sla_rule:"Receive and send on the expected day. After 1 business day it turns orange, after 2 it is escalated to Tootsi. If you can't, report a delay.",
+ delay_btn:"⚠ Report a delay or issue",delay_h:"Report a delay or issue",delay_p:"Tell Tootsi why this PO can't be received yet. The receiving clock stops while Tootsi looks at it.",
+ d_reason:"Reason",d_note:"Details",d_note_ph:"e.g. Container held at customs since Friday. Broker says Wednesday.",d_new:"New expected date",d_pic:"📷 Add photo (optional)",d_send:"Send to Tootsi",d_sent:"Delay sent. Tootsi was alerted.",
+ d_cur:"Delay reported",d_clear:"Problem solved, resume receiving",
+ r_notarr:"Truck / container not arrived",r_customs:"Held at port or customs",r_docs:"Missing documents (BOL, packing list)",r_seal:"Seal broken or missing",r_wrong:"Wrong product or labels",r_dmg:"Damaged load, waiting for decision",r_dock:"Dock full / no staff",r_other:"Other"},
 fr:{lg_tag:"Chaque bon de commande. Chaque document. Un seul endroit.",lg_p:"Achats, Exécution, CQ, Logistique, Réception et nos partenaires 3PL travaillent sur la même page.",lg_l1:"Savoir pour qui est chaque commande : production ou ventes",lg_l2:"Voir quand elle arrive, et quand elle est vraiment arrivée",lg_l3:"Comptes, photos et documents de réception sur la commande",lg_l4:"Réclamations prêtes en un clic",
  lg_h:"Connexion à Réception Tootsi",lg_s:"Utilisez votre courriel de travail.",lg_email:"Courriel",lg_pw:"Mot de passe",lg_btn:"Se connecter",lg_forgot:"Mot de passe oublié ?",lg_dh:"Comptes de démonstration",lg_dp:"Démo seulement : tout mot de passe fonctionne. @tootsi.com ouvre le portail interne, @trans-plus ouvre TP, @deslauriers ouvre DL.",
  lg_err_empty:"Entrez votre courriel et votre mot de passe.",lg_err_dom:"Ce courriel n'est pas configuré. Utilisez un compte de démonstration.",lg_forgot_t:"Dans la vraie application, un lien est envoyé à votre courriel.",
@@ -300,7 +324,7 @@ fr:{lg_tag:"Chaque bon de commande. Chaque document. Un seul endroit.",lg_p:"Ach
  pallets:"palettes",expected:"Prévu",
  r_for:"Réception pour Tootsi",r_req:"Tootsi demande un recompte. Recomptez tout le chargement.",
  s1:"Photo du chargement avant déchargement",s1p:"Ouvrez la remorque ou le conteneur. Prenez une photo avant de toucher quoi que ce soit.",s1b:"📷 Photo du chargement",
- s2:"Comptez ce que vous avez reçu",s2p:"Comptez chaque caisse et pesez le chargement.",s2pf:"Chargement en vrac : comptez chaque sac ou caisse, puis les palettes montées.",
+ s2:"Comptez ce que vous avez reçu",s2p:"Comptez chaque palette et caisse. Le poids net est facultatif.",lbo:"Lb net (facultatif)",s2pf:"Chargement en vrac : comptez chaque sac ou caisse, puis les palettes montées.",
  date:"Date de réception",plt:"Palettes",pltb:"Palettes montées",cs:"Caisses",lb:"Lb net",
  s2r:"Recomptez",s2rp:"Votre compte est différent de la commande. Recomptez tout le chargement et entrez les nouveaux chiffres.",s2r_saved:"Premier compte enregistré.",
  s2n:"Toujours différent après le recompte. Écrivez ce que vous avez trouvé. Les Achats seront avisés.",s2n_ph:"ex. Recompté deux fois. 20 caisses manquantes sur la palette 7.",
@@ -312,7 +336,13 @@ fr:{lg_tag:"Chaque bon de commande. Chaque document. Un seul endroit.",lg_p:"Ach
  of:"sur",done_w:"faits",missing:"Manque",send:"Envoyer à Tootsi",
  m1:"photo du chargement",m2:"compte",m2r:"recompte",m2n:"note sur l'écart",m3:"photo, lot et expiration",m4:"document de réception",m5:"état du chargement",m5n:"note et photos des dommages",
  done_h:"Envoyé à Tootsi",done_p:"Les Achats ont été avisés de l'écart.",done_ok:"Merci. Tout Tootsi peut le voir maintenant.",next:"Livraison suivante",
- ro:"Envoyé",ro_change:"Pour une modification, contactez le Contrôle d'inventaire Tootsi.",your_com:"Votre commentaire",cond:"État"}};
+ ro:"Envoyé",ro_change:"Pour une modification, contactez le Contrôle d'inventaire Tootsi.",your_com:"Votre commentaire",cond:"État",
+ sla_ok:"À temps",sla_due:"À recevoir aujourd'hui",sla_nudge:"En retard",sla_esc:"Escaladé",sla_up:"À venir",sla_paused:"Retard signalé",bh:"h ouvrables",
+ sla_rule:"Recevez et envoyez le jour prévu. Après 1 jour ouvrable, la commande devient orange ; après 2, elle est escaladée à Tootsi. Sinon, signalez un retard.",
+ delay_btn:"⚠ Signaler un retard ou un problème",delay_h:"Signaler un retard ou un problème",delay_p:"Dites à Tootsi pourquoi cette commande ne peut pas encore être reçue. Le chronomètre s'arrête pendant que Tootsi regarde.",
+ d_reason:"Raison",d_note:"Détails",d_note_ph:"ex. Conteneur retenu aux douanes depuis vendredi. Le courtier dit mercredi.",d_new:"Nouvelle date prévue",d_pic:"📷 Ajouter une photo (facultatif)",d_send:"Envoyer à Tootsi",d_sent:"Retard envoyé. Tootsi a été avisé.",
+ d_cur:"Retard signalé",d_clear:"Problème réglé, reprendre la réception",
+ r_notarr:"Camion / conteneur pas arrivé",r_customs:"Retenu au port ou aux douanes",r_docs:"Documents manquants (connaissement, liste de colisage)",r_seal:"Scellé brisé ou absent",r_wrong:"Mauvais produit ou étiquettes",r_dmg:"Chargement endommagé, en attente de décision",r_dock:"Quai plein / pas de personnel",r_other:"Autre"}};
 let lang="en";try{lang=localStorage.getItem("tootsi_lang")||"en"}catch(e){}
 const t=k=>(L[lang]&&L[lang][k])||L.en[k]||k;
 const CONDS=[["Good","✅","c_Good"],["Shifted load","↔️","c_Shifted"],["Collapsed pallets","⬇️","c_Collapsed"],["Double-stacked","⏫","c_Double"],["Torn / leaking bags","🩹","c_Torn"],["Wet / dirty","💧","c_Wet"],["Other","❓","c_Other"]];
@@ -325,6 +355,9 @@ const POS=[
  {po:"90103",wh:"TP",item:"11388",desc:"BRAZIL NUTS (MIDGET)",eta:"2026-11-26",cntr:"DEMO3456789",plt:20,cs:1200,lbs:52920,load:"FCL 40' · Palletized",supplier:"Supplier C"},
  {po:"90104",wh:"TP",item:"30096",desc:"ORGANIC WHOLE OAT GROATS",eta:"2026-11-28",cntr:"",plt:22,cs:1000,lbs:25000,load:"FTL · Palletized",supplier:"Supplier D"},
  {po:"90105",wh:"TP",item:"30070",desc:"ORGANIC SHINE SKIN PUMPKIN SEEDS AA",eta:"2026-11-18",cntr:"DEMO7788990",plt:25,cs:1000,lbs:55120,load:"FCL 40' · Floor loaded",supplier:"Supplier K"},
+ {po:"90106",wh:"TP",item:"10220",desc:"CASHEW PIECES (SSP2)",eta:"2026-11-19",cntr:"DEMO1122334",plt:18,cs:700,lbs:35000,load:"FCL 20' · Palletized",supplier:"Supplier L"},
+ {po:"90107",wh:"TP",item:"31009",desc:"ORGANIC HULLED MILLET",eta:"2026-11-20",cntr:"DEMO5566778",plt:21,cs:800,lbs:40000,load:"FCL 20' · Palletized",supplier:"Supplier M"},
+ {po:"90204",wh:"DL",item:"10711",desc:"TURKISH APRICOTS",eta:"2026-11-20",cntr:"DEMO9988776",plt:17,cs:1299,lbs:36372,load:"FCL 40' · Palletized",supplier:"Supplier N"},
  {po:"90201",wh:"DL",item:"10402",desc:"CALIFORNIA WALNUT 1/2 & PIECES",eta:"2026-11-24",cntr:"",plt:20,cs:1600,lbs:40000,load:"FTL · Palletized",supplier:"Supplier E"},
  {po:"90202",wh:"DL",item:"10611",desc:"BLANCHED REGULAR SLICED ALMONDS",eta:"2026-11-25",cntr:"",plt:20,cs:1600,lbs:40000,load:"FTL · Palletized",supplier:"Supplier F"},
  {po:"90203",wh:"DL",item:"14015",desc:"SULTANA RAISINS (TURKEY)",eta:"2026-11-27",cntr:"DEMO4567890",plt:20,cs:1600,lbs:44096,load:"FCL 20' · Floor loaded",supplier:"Supplier G"},
@@ -358,6 +391,28 @@ const INT={"90201":[{cat:"Supplier packing list",name:"packing_list_90201.pdf",b
 const ISSUES={"90203":{type:"Short 20 cs + damage",owner:"Purchasing",status:"Open",opened:"2026-11-22",urgent:true,decision:"Accept with reservation",decisionNote:"Accepted, bags repacked. Claim to supplier."}};
 const NOTES={"90203":[{who:"Purchasing",text:"Sent photos and counts to supplier. Waiting for their reply.",at:"Nov 22, 2026 16:02"},{who:"QC",text:"Lot locked until the claim is decided.",at:"Nov 23, 2026 08:15"}]};
 const REQ={};
+// 3PL-reported delays (clock paused while open)
+const DELAY={"90204":{reason:"r_customs",note:"Container held at customs since Friday. Broker expects release Wednesday.",newDate:"2026-11-25",pics:[],by:"DL receiver",at:"Nov 20, 2026 15:30"}};
+const DELAY_OWNER={r_notarr:"Logistics",r_customs:"Logistics",r_docs:"Purchasing",r_seal:"QC",r_wrong:"Purchasing",r_dmg:"QC",r_dock:"Inventory Control",r_other:"Inventory Control"};
+const REASONS=["r_notarr","r_customs","r_docs","r_seal","r_wrong","r_dmg","r_dock","r_other"];
+// Receiving clock (like the 3PL master: business hours overdue). Demo "now" = Mon Nov 23, 11:00.
+const NOW_H=11, SLA_OK=0, SLA_NUDGE=9, SLA_ESC=18; // 9 business h = 1 business day // business hours after the expected date
+function bizHours(startDate){ // business hours (Mon-Fri, 8:00-17:00) from startDate 8:00 to now
+ let h=0;const s=new Date(startDate+"T08:00"),e=new Date(TODAY+"T"+String(NOW_H).padStart(2,"0")+":00");
+ for(let t=new Date(s);t<e;t.setHours(t.getHours()+1)){const d=t.getDay(),hr=t.getHours();if(d>0&&d<6&&hr>=8&&hr<17)h++}return h}
+function sla(p){
+ if(!isTPL(p.wh)&&!OWN.includes(p.wh))return null;
+ if(SUB[p.po])return null;
+ if(DELAY[p.po])return{lvl:"paused",h:0,k:"sla_paused"};
+ if(p.eta>TODAY)return{lvl:"up",h:0,k:"sla_up"};
+ const h=bizHours(REQ[p.po]?TODAY:p.eta);
+ if(h>=SLA_ESC)return{lvl:"esc",h,k:"sla_esc"};
+ if(h>=SLA_NUDGE)return{lvl:"nudge",h,k:"sla_nudge"};
+ if(h>=SLA_OK)return{lvl:"due",h,k:"sla_due"};
+ return{lvl:"ok",h,k:"sla_due"};
+}
+const slaPill=(p,tr)=>{const s=sla(p);if(!s)return"";const tx=tr?t(s.k):({paused:"Delay reported",up:"Upcoming",ok:"Receive today",due:"Receive today",nudge:"Receiving overdue",esc:"Escalated"})[s.lvl];
+ return `<span class="sla sla-${s.lvl}">${s.lvl==="esc"?"🔴":s.lvl==="nudge"?"🟠":s.lvl==="due"||s.lvl==="ok"?"🟡":s.lvl==="paused"?"⏸":"⚪"} ${esc(tx)}${s.h?` · ${s.h} ${tr?t("bh"):"business h"}`:""}</span>`};
 const CATS=["Supplier packing list","Supplier loading report","Bill of lading","Certificate of analysis","QC report","NCR / claim","Photos","Other"];
 const TEAMS=["Juan (Inventory Control)","Purchasing","Fulfillment","QC","Logistics","Receiving","Production","Sales"];
 const OWNERS=["Purchasing","Logistics","QC","Receiving","Inventory Control","Fulfillment"];
@@ -412,9 +467,11 @@ function syncIssues(){
   if(pl&&diffs(p,pl).length)types.push("Packing list ≠ PO ("+gapText(p,pl)+")");
   if(s&&diffs(p,s).length)types.push(gapText(p,s));
   if(s?.damage)types.push("damage");
+  if(DELAY[p.po])types.push("Delay: "+L.en[DELAY[p.po].reason]);
+  const sl=sla(p);if(sl&&(sl.lvl==="nudge"||sl.lvl==="esc")&&!DELAY[p.po])types.push("Receiving overdue at "+p.wh);
   const type=types.join(" + ");
   const is=ISSUES[p.po];
-  if(type&&!is)ISSUES[p.po]={type,owner:"Purchasing",status:"Open",opened:TODAY,urgent:!!s?.damage,decision:s?.damage?"Pending":"",decisionNote:""};
+  if(type&&!is)ISSUES[p.po]={type,owner:DELAY[p.po]?DELAY_OWNER[DELAY[p.po].reason]:sl&&!s?"Inventory Control":"Purchasing",status:"Open",opened:DELAY[p.po]?p.eta<TODAY?p.eta:TODAY:TODAY,urgent:!!s?.damage||sl?.lvl==="esc",decision:s?.damage?"Pending":"",decisionNote:""};
   else if(is&&type&&type!==is.type){is.type=type;if(is.status!=="Open"){is.status="Open";is.opened=TODAY;(NOTES[p.po]||(NOTES[p.po]=[])).push({who:"System",text:"Issue reopened: "+type,at:now()})}if(s?.damage&&!is.decision)is.decision="Pending";}
  });
 }
@@ -446,22 +503,60 @@ function render(){syncIssues();renderRoles();role==="TOOTSI"?renderTootsi():rend
 function render3pl(){
  const mine=POS.filter(p=>p.wh===role).map(view3pl);
  const todo=mine.filter(p=>!SUB[p.po]),done=mine.filter(p=>SUB[p.po]);
- const req=todo.filter(p=>REQ[p.po]),soon=todo.filter(p=>!REQ[p.po]&&p.eta<=addDays(TODAY,1)),later=todo.filter(p=>!REQ[p.po]&&p.eta>addDays(TODAY,1));
- const card=p=>{const s=SUB[p.po];return `<button type="button" class="po ${REQ[p.po]?"req":""}" data-po="${esc(p.po)}">
+ const lv=p=>sla(POS.find(z=>z.po===p.po))?.lvl;
+ const req=todo.filter(p=>REQ[p.po]),late=todo.filter(p=>!REQ[p.po]&&["esc","nudge"].includes(lv(p))),paused=todo.filter(p=>!REQ[p.po]&&lv(p)==="paused"),
+  soon=todo.filter(p=>!REQ[p.po]&&!late.includes(p)&&!paused.includes(p)&&p.eta<=addDays(TODAY,1)),later=todo.filter(p=>!REQ[p.po]&&!late.includes(p)&&!paused.includes(p)&&p.eta>addDays(TODAY,1));
+ const card=p=>{const s=SUB[p.po],sl=sla(POS.find(z=>z.po===p.po)),dl=DELAY[p.po];return `<div class="pocard lvl-${sl?sl.lvl:"none"}"><button type="button" class="po ${REQ[p.po]?"req":""}" data-po="${esc(p.po)}">
    <div><div class="big mono">PO ${esc(p.po)}${p.cntr?` <span style="font-weight:500;color:var(--muted);font-size:15px">· ${esc(p.cntr)}</span>`:""}</div>
-   <div class="m">${esc(p.desc)} · ${p.plt} ${t("pallets")} · ${esc(p.load)}</div><div class="m">${t("expected")}: <b style="color:var(--ink)">${fd(p.eta)}</b></div></div>
-   ${s?`<span class="pill ${s.damage?"p-dmg":"p-done"}">${s.damage?t("sent_issue"):t("sent")}</span>`:`<span class="go">${REQ[p.po]?t("recount_req"):t("receive")} →</span>`}</button>`};
+   <div class="m">${esc(p.desc)} · ${p.plt} ${t("pallets")} · ${esc(p.load)}</div><div class="m">${t("expected")}: <b style="color:var(--ink)">${fd(p.eta)}</b></div>
+   ${!s?`<div style="margin-top:6px">${slaPill(POS.find(z=>z.po===p.po),true)}</div>`:""}${dl?`<div class="m" style="color:#5b3a91;margin-top:4px">⏸ ${esc(t(dl.reason))}${dl.newDate?" · "+t("d_new")+": "+fds(dl.newDate):""}</div>`:""}</div>
+   ${s?`<span class="pill ${s.damage?"p-dmg":"p-done"}">${s.damage?t("sent_issue"):t("sent")}</span>`:`<span class="go">${REQ[p.po]?t("recount_req"):t("receive")} →</span>`}</button>
+   ${!s?`<button type="button" class="delaybtn" data-delay="${esc(p.po)}">${dl?"⏸ "+t("d_cur")+" · "+t("d_clear"):t("delay_btn")}</button>`:""}</div>`};
  $("main").innerHTML=`
  <div class="hello"><h2 tabindex="-1">${t("hi")} ${esc(ROLES[role].name)}</h2><p>${t("tap")}</p></div>
- <p class="chip-line"><b>${soon.length}</b> ${t("today")} · <b>${todo.length}</b> ${t("toRecv")} · <b style="${req.length?"color:var(--amber)":""}">${req.length}</b> ${t("recounts")}</p>
+ <p class="slarule">⏱ ${t("sla_rule")}</p>
+ <p class="chip-line">${late.length?`<b style="color:#b0182f">${late.length}</b> ${t("sla_nudge").toLowerCase()} · `:""}<b>${soon.length}</b> ${t("today")} · <b>${todo.length}</b> ${t("toRecv")} · <b style="${req.length?"color:var(--amber)":""}">${req.length}</b> ${t("recounts")}</p>
  <div class="tabs" role="tablist"><button type="button" role="tab" aria-selected="${tab==="todo"}" data-t2="todo" class="${tab==="todo"?"on":""}">${t("tab_todo")} (${todo.length})</button><button type="button" role="tab" aria-selected="${tab==="done"}" data-t2="done" class="${tab==="done"?"on":""}">${t("tab_done")} (${done.length})</button></div>
  <div class="list">${tab==="todo"?(todo.length?`
    ${req.length?`<div class="group" style="color:var(--amber)">${t("g_recount")}</div>${req.map(card).join("")}`:""}
+   ${late.length?`<div class="group" style="color:#b0182f">${t("sla_nudge")}</div>${late.map(card).join("")}`:""}
    ${soon.length?`<div class="group">${t("g_today")}</div>${soon.map(card).join("")}`:""}
+   ${paused.length?`<div class="group" style="color:#5b3a91">${t("sla_paused")}</div>${paused.map(card).join("")}`:""}
    ${later.length?`<div class="group">${t("g_later")}</div>${later.map(card).join("")}`:""}`:`<div class="empty">${t("empty_todo")}</div>`)
   :(done.length?done.map(card).join(""):`<div class="empty">${t("empty_done")}</div>`)}</div>`;
  document.querySelectorAll("[data-t2]").forEach(b=>b.onclick=()=>{tab=b.dataset.t2;render()});
  document.querySelectorAll(".po").forEach(el=>el.onclick=()=>openReceive(el.dataset.po));
+ document.querySelectorAll("[data-delay]").forEach(b=>b.onclick=()=>openDelay(b.dataset.delay));
+}
+// ---------- 3PL: report a delay / issue ----------
+let dform;
+function openDelay(po){
+ const p=view3pl(POS.find(z=>z.po===po)),cur=DELAY[po];
+ if(cur){delete DELAY[po];const is=ISSUES[po];if(is&&/Delay/.test(is.type)){is.type=is.type.replace(/ ?\+? ?Delay: [^+]*/,"").trim()||"Delay solved";if(is.type==="Delay solved")is.status="Resolved"}
+  (NOTES[po]||(NOTES[po]=[])).push({who:ROLES[role].name,text:"Delay solved. Receiving resumed.",at:now(),ext:true});toast(t("d_clear"));render();return}
+ dform={reason:"",note:"",newDate:"",pics:[]};drawDelay(po);
+}
+function drawDelay(po){
+ const p=view3pl(POS.find(z=>z.po===po));
+ const ok=dform.reason&&dform.note.trim().length>=5;
+ openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="Close">×</button><div class="hsub">${t("delay_h")}</div><h2 class="mono" id="dtitle" tabindex="-1">PO ${esc(p.po)}</h2><div>${esc(p.item)} · ${esc(p.desc)} · ${t("expected")} ${fd(p.eta)}</div></div>
+ <div class="db"><p class="hint" style="font-size:13.5px">${t("delay_p")}</p>
+  <div class="step"><h4>${t("d_reason")}</h4><div class="cond" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">${REASONS.map(r=>`<button type="button" data-rs="${r}" aria-pressed="${dform.reason===r}" class="${dform.reason===r?"on":""}">${t(r)}</button>`).join("")}</div></div>
+  <div class="step"><label for="d_note" style="font-size:15px;color:var(--ink);font-weight:600">${t("d_note")}</label><textarea id="d_note" rows="3" placeholder="${esc(t("d_note_ph"))}">${esc(dform.note)}</textarea>
+   <div style="margin-top:10px"><label for="d_new">${t("d_new")}</label><input class="in big-in" type="date" id="d_new" min="${TODAY}" value="${esc(dform.newDate)}"></div>
+   <label class="drop" style="margin-top:10px"><input type="file" accept="image/*,application/pdf" capture="environment" multiple id="d_pic">${t("d_pic")}</label>${thumbs(dform.pics)}</div>
+ </div>
+ <div class="foot"><button type="button" class="btn" id="d_send" ${ok?"":"disabled"}>${t("d_send")}</button></div>`);
+ const chk=()=>{$("d_send").disabled=!(dform.reason&&dform.note.trim().length>=5)};
+ document.querySelectorAll("[data-rs]").forEach(b=>b.onclick=()=>{dform.reason=b.dataset.rs;dform.note=$("d_note").value;dform.newDate=$("d_new").value;drawDelay(po)});
+ $("d_note").oninput=e=>{dform.note=e.target.value;chk()};$("d_new").oninput=e=>{dform.newDate=e.target.value};
+ $("d_pic").onchange=e=>{[...e.target.files].forEach(f=>dform.pics.push({name:f.name,type:f.type,url:URL.createObjectURL(f)}));dform.note=$("d_note").value;drawDelay(po)};
+ $("d_send").onmousedown=e=>e.preventDefault();
+ $("d_send").onclick=()=>{dform.note=$("d_note").value.trim();if(!dform.reason||dform.note.length<5)return;
+  DELAY[po]={reason:dform.reason,note:dform.note,newDate:dform.newDate,pics:dform.pics,by:ROLES[role].name,at:now()};
+  const is=ISSUES[po];if(is){is.status="Open";is.owner=DELAY_OWNER[dform.reason]}
+  (NOTES[po]||(NOTES[po]=[])).push({who:ROLES[role].name,text:"Delay reported: "+L.en[dform.reason]+". "+dform.note+(dform.newDate?" New date: "+dform.newDate:""),at:now(),ext:true});
+  closeD();render();toast(t("d_sent"))};
 }
 
 // ================= RECEIVING FORM (3PL, or Tootsi receiving at BM/LY/HB) =================
@@ -471,8 +566,9 @@ function openReceive(po,back){form=blankForm();form.back=back||null;if(SUB[po])r
 function thumbs(arr){return `<div class="thumbs">${arr.map(f=>f.type?.startsWith("image")?`<img src="${f.url}" alt="${esc(f.name)}">`:`<div class="file">📄 ${esc(f.name)}</div>`).join("")}</div>`}
 function stepsState(){
  const bad=form.cond&&form.cond!=="Good";
- const cnt=form.stage==="count"?[form.plt,form.cs,form.lbs]:[form.rplt,form.rcs,form.rlbs];
- const okNums=cnt.every(v=>num(v)!=null&&num(v)>=0)&&!!form.recv;
+ const cnt=form.stage==="count"?[form.plt,form.cs]:[form.rplt,form.rcs];
+ const lb=form.stage==="count"?form.lbs:form.rlbs;
+ const okNums=cnt.every(v=>num(v)!=null&&num(v)>=0)&&(lb===""||(num(lb)!=null&&num(lb)>=0))&&!!form.recv;
  return[
   {k:"s1",ok:form.loadPics.length>0,m:"m1"},
   {k:"s2",ok:okNums&&(!form.needNote||form.diffNote.trim().length>=10),m:form.needNote?"m2n":form.stage==="recount"?"m2r":"m2"},
@@ -506,8 +602,8 @@ function drawReceive(po){
    <div class="step ${recount?"warn":""}" id="st_s2"><h4>${n(2)}${recount?t("s2r"):t("s2")}</h4>
     ${recount?`<p><b>${t("s2rp")}</b><br>${t("s2r_saved")}</p>`:`<p>${floor?t("s2pf"):t("s2p")}</p>`}
     ${recount?"":`<div style="margin-bottom:10px"><label for="f_recv">${t("date")}</label><input class="in big-in" id="f_recv" type="date" value="${esc(form.recv)}" max="${TODAY}"></div>`}
-    <div class="count">${recount?numIn("f_rplt",floor?t("pltb"):t("plt"),form.rplt,"plt")+numIn("f_rcs",t("cs"),form.rcs,"cs")+numIn("f_rlbs",t("lb"),form.rlbs,"lb")
-      :numIn("f_plt",floor?t("pltb"):t("plt"),form.plt,"plt")+numIn("f_cs",t("cs"),form.cs,"cs")+numIn("f_lbs",t("lb"),form.lbs,"lb")}</div>
+    <div class="count">${recount?numIn("f_rplt",floor?t("pltb"):t("plt"),form.rplt,"plt")+numIn("f_rcs",t("cs"),form.rcs,"cs")+numIn("f_rlbs",t("lbo"),form.rlbs,"lb")
+      :numIn("f_plt",floor?t("pltb"):t("plt"),form.plt,"plt")+numIn("f_cs",t("cs"),form.cs,"cs")+numIn("f_lbs",t("lbo"),form.lbs,"lb")}</div>
     ${form.needNote?`<p style="margin:12px 0 6px;color:var(--amber)"><b>${t("s2n")}</b></p><label for="f_note" style="position:absolute;left:-9999px">${t("s2n")}</label><textarea id="f_note" rows="2" placeholder="${esc(t("s2n_ph"))}">${esc(form.diffNote)}</textarea>`:""}
    </div>
    <div class="step" id="st_s3"><h4>${n(3)}${t("s3")}</h4><p>${t("s3p")}</p>
@@ -562,7 +658,7 @@ function submitReceive(full){
  const flagged=d.length>0||bad;
  $("drawer").innerHTML=`<div class="dh"><button type="button" class="close" id="x" aria-label="Close">×</button><h2 id="dtitle" tabindex="-1" class="mono">PO ${esc(po)}</h2></div>
  <div class="db"><div class="done-screen"><div class="ok" aria-hidden="true">✓</div><h2>${t("done_h")}</h2>
-  <p class="mono" style="font-size:16px">${fmt(cur.plt)} plt · ${fmt(cur.cs)} cs · ${fmt(cur.lbs)} lb</p>
+  <p class="mono" style="font-size:16px">${fmt(cur.plt)} plt · ${fmt(cur.cs)} cs${cur.lbs!=null?" · "+fmt(cur.lbs)+" lb":""}</p>
   <p style="color:${flagged?"#b0182f":"var(--muted)"}">${flagged?t("done_p"):t("done_ok")}</p>
   <button type="button" class="btn" id="nextd" style="min-width:220px;min-height:52px">${tp?t("next"):"Back to PO "+esc(po)}</button></div></div>`;
  $("x").onclick=()=>{closeD();render()};
@@ -599,22 +695,28 @@ function qtyStatus(p){
 function statusCell(p){
  const s=SUB[p.po];let main;
  if(REQ[p.po])main=`<span class="pill p-warn">Recount asked</span>`;
+ else if(DELAY[p.po])main=`<span class="pill" style="background:#efe7f7;color:#5b3a91">Delay reported</span><div class="small">${esc(L.en[DELAY[p.po].reason])}${DELAY[p.po].newDate?" · new date "+fds(DELAY[p.po].newDate):""}</div>`;
  else if(s){const dd=days(p.eta,s.recv);main=`<span class="pill ${s.damage?"p-dmg":"p-done"}">Arrived ${fds(s.recv)}</span>${dd?`<div class="small">${Math.abs(dd)} d ${dd<0?"early":"late"} vs ETA ${fds(p.eta)}</div>`:""}`}
  else if(p.eta<TODAY)main=`<span class="pill p-dmg">Late ${days(p.eta)} d</span><div class="small">ETA ${fds(p.eta)}</div>`;
  else main=`<span class="pill p-todo">ETA ${fds(p.eta)}</span>`;
  return main+`<div class="small" style="${p.x.qc==="Locked"?"color:var(--amber)":""}">${qcText(p.x)}</div>${notInSap(p)?`<div class="small" style="color:#b0182f;font-weight:500">Not in SAP · ${days(SUB[p.po].recv)} d</div>`:""}`;
 }
 function needsAction(p){
- const is=openIssue(p),s=SUB[p.po],a=[];
+ const is=openIssue(p),s=SUB[p.po],a=[],sl=sla(p),dl=DELAY[p.po];
+ if(dl)a.push(p.wh+" delay: "+L.en[dl.reason]);
+ else if(sl&&sl.lvl==="esc")a.push("Not received at "+p.wh+" · "+sl.h+" h");
+ else if(sl&&sl.lvl==="nudge")a.push("Receiving overdue at "+p.wh+" · "+sl.h+" h");
  if(is&&is.decision==="Pending")a.push("Dock decision needed");
  if(is)a.push((overdue(is)?"Overdue: ":"Issue: ")+is.owner);
  if(notInSap(p))a.push("Enter in SAP");
  if(!p.x.alloc)a.push("Set allocation");
- if(!s&&!REQ[p.po]&&p.eta<TODAY)a.push("Find PO (late)");
+ if(!s&&!REQ[p.po]&&!sl&&p.eta<TODAY)a.push("Find PO (late)");
  return a;
 }
 const KPIS=[
  {id:"week",l:"Arriving in the next 7 days",f:p=>!SUB[p.po]&&p.eta>=TODAY&&days(TODAY,p.eta)<=7},
+ {id:"rcv",l:"Receiving overdue",f:p=>["nudge","esc"].includes(sla(p)?.lvl),alert:true},
+ {id:"dly",l:"Delays reported by 3PL",f:p=>!!DELAY[p.po],alert:true},
  {id:"iss",l:"Open issues",f:p=>!!openIssue(p),alert:true},
  {id:"over",l:"Issues overdue",f:p=>overdue(openIssue(p)),alert:true},
  {id:"sap",l:"Arrived, not in SAP 2+ d",f:p=>notInSap(p),alert:true},
@@ -637,13 +739,15 @@ function renderTootsi(){
   <select id="ownF" aria-label="Issue owner"><option value="">Issues: any owner</option>${OWNERS.map(o=>`<option ${ownF===o?"selected":""}>${o}</option>`).join("")}</select>
   ${kpiF||whF||ownF||qRaw?`<button type="button" class="btn ghost" id="clr" style="min-height:40px;padding:8px 12px">Clear filters</button>`:""}
  </div>
+ <div class="legend"><b>Receiving clock</b> (business hours after the expected date, like the 3PL master):
+  <span class="sla sla-up">⚪ Upcoming</span><span class="sla sla-due">🟡 Expected today</span><span class="sla sla-nudge">🟠 1 business day late (nudge)</span><span class="sla sla-esc">🔴 2+ business days late (escalate)</span><span class="sla sla-paused">⏸ Delay reported by 3PL</span></div>
  <div class="tw"><table><thead><tr><th>Needs action</th><th>PO</th><th>Dest.</th><th>Item</th><th>Status</th><th>Who it's for</th><th>Qty check</th></tr></thead><tbody>
- ${rows.length?rows.map(p=>{const qs=qtyStatus(p),na=needsAction(p),s=SUB[p.po];return `<tr data-po="${esc(p.po)}">
+ ${rows.length?rows.map(p=>{const qs=qtyStatus(p),na=needsAction(p),s=SUB[p.po],sl=sla(p);return `<tr data-po="${esc(p.po)}" class="lvl-${sl?sl.lvl:"none"}">
   <td data-l="Needs action" class="wide">${na.length?na.map(a=>`<div class="need">● ${esc(a)}</div>`).join(""):`<span class="small" style="margin:0">—</span>`}</td>
   <td data-l="PO"><button type="button" class="pobtn" data-open="${esc(p.po)}" aria-label="Open PO ${esc(p.po)}">${esc(p.po)}</button>${p.manual?`<div><span class="pill a-prod" style="margin-top:4px">Manual</span></div>`:""}</td>
   <td data-l="Dest."><b>${esc(p.wh)}</b><div class="small" style="margin:0">${isTPL(p.wh)?"3PL":"Tootsi"}</div></td>
   <td data-l="Item" class="wide"><b>${esc(p.item)}</b> <span class="small" style="margin:0">· ${fmt(p.plt)} plt · ${fmt(p.cs)} cs · ${fmt(p.lbs)} lb</span><div class="clamp">${esc(p.desc)}${s?.lot?` · Lot ${esc(s.lot)}`:""}</div></td>
-  <td data-l="Status">${statusCell(p)}${s?.comment?`<div class="small" style="color:var(--blue)" title="${esc(s.comment)}">💬 ${isTPL(p.wh)?"3PL":"Receiving"} comment</div>`:""}</td>
+  <td data-l="Status">${statusCell(p)}${sla(p)&&sla(p).lvl!=="up"?`<div style="margin-top:4px">${slaPill(p)}</div>`:""}${s?.comment?`<div class="small" style="color:var(--blue)" title="${esc(s.comment)}">💬 ${isTPL(p.wh)?"3PL":"Receiving"} comment</div>`:""}</td>
   <td data-l="Who it's for">${allocPill(p.x)}${p.x.so?`<div class="small">${esc(p.x.so)}</div>`:""}</td>
   <td data-l="Qty check"><span class="pill ${qs.cls}">${esc(qs.t)}</span>${s?.recount?`<div class="small" style="color:var(--amber)">Recounted</div>`:""}</td></tr>`}).join(""):`<tr><td colspan="7"><div class="empty" style="border:none">No POs match these filters.</div></td></tr>`}
  </tbody></table></div>
@@ -692,7 +796,7 @@ function timeline(p){
 }
 function claimText(p){
  const s=SUB[p.po],pl=PL[p.po],lr=LR[p.po],ev=evidence(p).concat(INT[p.po]||[]),c=countsList(p),x=p.x,is=ISSUES[p.po];
- const o=[],q=z=>`${z.plt} plt / ${z.cs} cs / ${z.lbs} lb`;
+ const o=[],q=z=>`${z.plt} plt / ${z.cs} cs / ${z.lbs==null?"— lb (from photos / SAP)":z.lbs+" lb"}`;
  o.push(`CLAIM / NCR SUMMARY · PO ${p.po}`,`Supplier: ${p.supplier}`,`Item: ${p.item} ${p.desc}${s?.lot?" · Lot "+s.lot:""}${s?.exp?" · Exp "+s.exp:""}`,
   `Received at: ${p.wh} on ${s?s.recv:"(not yet)"}${p.cntr?" · Container "+p.cntr:""} · ${p.load}`,"","Quantities",`  PO:              ${q(p)}`);
  if(pl)o.push(`  Packing list:    ${q(pl)}`);
@@ -720,6 +824,11 @@ function openInternal(po){
   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${allocPill(x)}<span class="pill ${x.qc==="Locked"?"p-warn":x.qc==="Released"?"p-done":"p-grey"}">${qcText(x)}</span>${p.manual?`<span class="pill a-prod">Added by ${esc(p.manual)}</span>`:""}</div>
   <div class="summary ${sumCls}">${esc(sum)}</div></div>
  <div class="db">
+  ${DELAY[po]?`<div class="sec"><div class="card" style="border-color:#c9b3e3;background:#f8f4fc"><b style="color:#5b3a91">⏸ Delay reported by ${esc(p.wh)}: ${esc(L.en[DELAY[po].reason])}</b>
+   <div style="margin-top:6px;font-size:13px">${esc(DELAY[po].note)}</div><div class="small">${esc(DELAY[po].by)} · ${esc(DELAY[po].at)}${DELAY[po].newDate?" · New expected date "+fd(DELAY[po].newDate):""}</div>${DELAY[po].pics.length?thumbs(DELAY[po].pics):""}
+   <div class="small" style="margin-top:6px">The receiving clock is paused. Owner: ${esc(DELAY_OWNER[DELAY[po].reason])}.</div></div></div>`
+  :sla(p)&&["due","nudge","esc"].includes(sla(p).lvl)?`<div class="sec"><div class="card lvl-${sla(p).lvl}" style="border-width:1px">${slaPill(p)} <span class="small">Expected ${fd(p.eta)}. ${esc(p.wh)} has not sent the receiving yet.</span>
+   ${isTPL(p.wh)?`<div style="margin-top:8px"><button type="button" class="btn ghost" id="nudge">📨 Nudge ${esc(p.wh)}</button></div>`:""}</div></div>`:""}
   ${is?`<div class="sec"><div class="issue ${is.status==="Open"?"":"closed"} ${overdue(is)?"overdue":""}">
    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${is.status==="Open"?"⚠ Open issue":"✓ Resolved"}: ${esc(is.type)}</b><span style="font-size:12px">${is.urgent?"Urgent · target same day":"Target 2 days"} · open ${days(is.opened)} d · CC Fatima</span></div>
    <div class="row r3" style="margin-top:10px">
@@ -831,6 +940,7 @@ function openInternal(po){
    $("cc").onclick=async()=>{try{await navigator.clipboard.writeText($("ct").value);toast("Copied. Paste it in your email and attach the files listed.")}catch(e){$("ct").select();toast("Select all and copy (Ctrl+C).")}}};
  }
  const ro=$("recvown");if(ro)ro.onclick=()=>openReceive(po,po);
+ const nd=$("nudge");if(nd)nd.onclick=()=>{log("Nudge sent to "+p.wh+": please receive PO "+po+" or report a delay");toast("Nudge sent to "+p.wh+" (email in the real app).");re()};
  const vo=$("viewown");if(vo)vo.onclick=()=>showSent(po,po);
 }
 
