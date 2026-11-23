@@ -111,7 +111,13 @@ function deleteWhere(name, match) {
 
 var _tz = null;
 /** Time zone of the database Sheet, so dates typed in it read back as the same day. */
-function dbTz_() { if (!_tz) { try { _tz = ss_().getSpreadsheetTimeZone(); } catch (e) { _tz = 'America/Toronto'; } } return _tz; }
+function dbTz_() { if (!_tz) _tz = tzOr_(function () { return ss_().getSpreadsheetTimeZone(); }, 'America/Toronto'); return _tz; }
+
+/** Google sometimes returns no usable time zone for a sheet. Use the fallback then. */
+function tzOr_(get, fallback) {
+  try { var z = get(); if (z && typeof z === 'string' || z instanceof String) return String(z); } catch (e) {}
+  return fallback;
+}
 
 function clearCache_() { _cache = {}; }
 

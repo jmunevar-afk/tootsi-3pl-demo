@@ -14,7 +14,7 @@ function importUpcoming() {
   var sh = src.getSheetByName(cfg.UPCOMING_TAB || 'UPCOMING FTL FCL');
   if (!sh) throw new Error('Tab "' + (cfg.UPCOMING_TAB || 'UPCOMING FTL FCL') + '" not found in the upcoming sheet.');
   // read dates in the source sheet's own time zone (that sheet is on GMT; reading it in Toronto time moved every ETA one day back)
-  var srcTz = src.getSpreadsheetTimeZone();
+  var srcTz = tzOr_(function () { return src.getSpreadsheetTimeZone(); }, 'Etc/GMT');
   var v = sh.getDataRange().getValues(); if (v.length < 2) return 0;
   var h = v[0].map(function (x) { return String(x).trim().toLowerCase(); });
   var col = function (name) { return h.indexOf(name.toLowerCase()); };
