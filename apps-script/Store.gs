@@ -48,7 +48,7 @@ function readAll(name) {
 
 function normalize_(col, v) {
   if (v instanceof Date) {
-    return Utilities.formatDate(v, 'America/Toronto', /At$|^at$/.test(col) ? 'yyyy-MM-dd HH:mm' : 'yyyy-MM-dd');
+    return Utilities.formatDate(v, dbTz_(), /At$|^at$/.test(col) ? 'yyyy-MM-dd HH:mm' : 'yyyy-MM-dd');
   }
   if (/Json$/.test(col)) {
     if (v === '' || v == null) return null;
@@ -108,6 +108,10 @@ function deleteWhere(name, match) {
   rows.forEach(function (n) { sh.deleteRow(n); });
   delete _cache[name];
 }
+
+var _tz = null;
+/** Time zone of the database Sheet, so dates typed in it read back as the same day. */
+function dbTz_() { if (!_tz) { try { _tz = ss_().getSpreadsheetTimeZone(); } catch (e) { _tz = 'America/Toronto'; } } return _tz; }
 
 function clearCache_() { _cache = {}; }
 

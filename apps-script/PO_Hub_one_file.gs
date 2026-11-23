@@ -201,7 +201,7 @@ function readAll(name) {
 
 function normalize_(col, v) {
   if (v instanceof Date) {
-    return Utilities.formatDate(v, 'America/Toronto', /At$|^at$/.test(col) ? 'yyyy-MM-dd HH:mm' : 'yyyy-MM-dd');
+    return Utilities.formatDate(v, dbTz_(), /At$|^at$/.test(col) ? 'yyyy-MM-dd HH:mm' : 'yyyy-MM-dd');
   }
   if (/Json$/.test(col)) {
     if (v === '' || v == null) return null;
@@ -261,6 +261,10 @@ function deleteWhere(name, match) {
   rows.forEach(function (n) { sh.deleteRow(n); });
   delete _cache[name];
 }
+
+var _tz = null;
+/** Time zone of the database Sheet, so dates typed in it read back as the same day. */
+function dbTz_() { if (!_tz) { try { _tz = ss_().getSpreadsheetTimeZone(); } catch (e) { _tz = 'America/Toronto'; } } return _tz; }
 
 function clearCache_() { _cache = {}; }
 
@@ -863,7 +867,11 @@ function notify3pl_(p, kind, ctx) {
  */
 function importUpcoming() {
   var cfg = config_(); if (!cfg.UPCOMING_SHEET_ID) return 0;
-  var sh = SpreadsheetApp.openById(cfg.UPCOMING_SHEET_ID).getSheetByName(cfg.UPCOMING_TAB || 'UPCOMING FTL FCL');
+  var src = SpreadsheetApp.openById(cfg.UPCOMING_SHEET_ID);
+  var sh = src.getSheetByName(cfg.UPCOMING_TAB || 'UPCOMING FTL FCL');
+  if (!sh) throw new Error('Tab "' + (cfg.UPCOMING_TAB || 'UPCOMING FTL FCL') + '" not found in the upcoming sheet.');
+  // read dates in the source sheet's own time zone (that sheet is on GMT; reading it in Toronto time moved every ETA one day back)
+  var srcTz = src.getSpreadsheetTimeZone();
   var v = sh.getDataRange().getValues(); if (v.length < 2) return 0;
   var h = v[0].map(function (x) { return String(x).trim().toLowerCase(); });
   var col = function (name) { return h.indexOf(name.toLowerCase()); };
@@ -875,7 +883,7 @@ function importUpcoming() {
     var r = v[i], po = String(r[c.po]).trim(), item = String(r[c.item]).trim();
     if (!po || !item) continue;
     var id = po + '|' + item; if (have[id]) continue;
-    var eta = r[c.eta] instanceof Date ? Utilities.formatDate(r[c.eta], 'America/Toronto', 'yyyy-MM-dd') : String(r[c.eta]).slice(0, 10);
+    var eta = r[c.eta] instanceof Date ? Utilities.formatDate(r[c.eta], srcTz, 'yyyy-MM-dd') : String(r[c.eta]).slice(0, 10);
     var whs = String(r[c.whs] || '').trim().toUpperCase();
     var size = String(r[c.size] || '').trim(), csize = String(r[c.csize] || '').trim(), pal = String(r[c.pltzd] || '').trim() === '1';
     var load = (size === 'FCL' ? 'FCL ' + (csize && csize !== '-' ? csize : '') : size) + ' · ' + (size === 'FCL' && !pal ? 'Floor loaded' : 'Palletized');
