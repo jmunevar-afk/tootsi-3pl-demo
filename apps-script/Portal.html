@@ -19,8 +19,9 @@
 <script>
 let TOKEN=null,WH="",NAME="";const HUB_URL=<?!= JSON.stringify(hubUrl) ?>;
 let lang=<?!= JSON.stringify(lang) ?>;try{lang=localStorage.getItem("tootsi_lang")||lang}catch(e){}
-Object.assign(L.en,{lg_h:"Sign in",lg_s:"3PL partners: use the username and password Tootsi gave you.",lg_user:"Username",lg_pw:"Password",lg_btn:"Sign in",lg_bad:"Wrong username or password.",lg_locked:"Too many tries. Wait 15 minutes, or call Tootsi Inventory Control.",lg_exp:"Your session ended. Please sign in again.",lg_staff:"Tootsi staff",lg_staffp:"Use your Tootsi Google account. No extra password.",lg_staffb:"Open the PO Hub with Google",lg_forgot:"Forgot your password? Call Tootsi Inventory Control. We reset it in one minute.",lg_tag:"Tootsi deliveries at your warehouse.",lg_p:"See the POs coming to you, receive them and send the photos and counts to Tootsi.",lg_l1:"Only your warehouse's deliveries",lg_l2:"Blind count with automatic recount",lg_l3:"Photos and receiving document in one step",lg_l4:"Report a delay in two taps",logout:"Sign out"});
-Object.assign(L.fr,{lg_h:"Connexion",lg_s:"Partenaires 3PL : utilisez le nom d'utilisateur et le mot de passe fournis par Tootsi.",lg_user:"Nom d'utilisateur",lg_pw:"Mot de passe",lg_btn:"Se connecter",lg_bad:"Nom d'utilisateur ou mot de passe incorrect.",lg_locked:"Trop d'essais. Attendez 15 minutes ou appelez le contrôle d'inventaire Tootsi.",lg_exp:"Votre session est terminée. Veuillez vous reconnecter.",lg_staff:"Employés Tootsi",lg_staffp:"Utilisez votre compte Google Tootsi. Aucun autre mot de passe.",lg_staffb:"Ouvrir le PO Hub avec Google",lg_forgot:"Mot de passe oublié ? Appelez le contrôle d'inventaire Tootsi. On le réinitialise en une minute.",lg_tag:"Les livraisons Tootsi à votre entrepôt.",lg_p:"Voyez les commandes qui arrivent chez vous, recevez-les et envoyez photos et quantités à Tootsi.",lg_l1:"Seulement les livraisons de votre entrepôt",lg_l2:"Comptage à l'aveugle avec recomptage automatique",lg_l3:"Photos et bon de réception en une étape",lg_l4:"Signaler un retard en deux touches",logout:"Déconnexion"});
+Object.assign(L.en,{search:"Search",search_ph:"Search PO, container or product…"});Object.assign(L.fr,{search:"Rechercher",search_ph:"Rechercher une commande, un conteneur ou un produit…"});
+Object.assign(L.en,{lg_h:"Sign in",lg_s:"3PL partners: use the username and password Tootsi gave you.",lg_user:"Username",lg_pw:"Password",lg_btn:"Sign in",lg_bad:"Wrong username or password.",lg_locked:"Too many tries. Wait 10 minutes, or call Tootsi Inventory Control.",lg_exp:"Your session ended. Please sign in again.",lg_staff:"Tootsi staff",lg_staffp:"Use your Tootsi Google account. No extra password.",lg_staffb:"Open the PO Hub with Google",lg_forgot:"Forgot your password? Call Tootsi Inventory Control. We reset it in one minute.",lg_tag:"Tootsi deliveries at your warehouse.",lg_p:"See the POs coming to you, receive them and send the photos and counts to Tootsi.",lg_l1:"Only your warehouse's deliveries",lg_l2:"Blind count with automatic recount",lg_l3:"Photos and receiving document in one step",lg_l4:"Report a delay in two taps",logout:"Sign out"});
+Object.assign(L.fr,{lg_h:"Connexion",lg_s:"Partenaires 3PL : utilisez le nom d'utilisateur et le mot de passe fournis par Tootsi.",lg_user:"Nom d'utilisateur",lg_pw:"Mot de passe",lg_btn:"Se connecter",lg_bad:"Nom d'utilisateur ou mot de passe incorrect.",lg_locked:"Trop d'essais. Attendez 10 minutes ou appelez le contrôle d'inventaire Tootsi.",lg_exp:"Votre session est terminée. Veuillez vous reconnecter.",lg_staff:"Employés Tootsi",lg_staffp:"Utilisez votre compte Google Tootsi. Aucun autre mot de passe.",lg_staffb:"Ouvrir le PO Hub avec Google",lg_forgot:"Mot de passe oublié ? Appelez le contrôle d'inventaire Tootsi. On le réinitialise en une minute.",lg_tag:"Les livraisons Tootsi à votre entrepôt.",lg_p:"Voyez les commandes qui arrivent chez vous, recevez-les et envoyez photos et quantités à Tootsi.",lg_l1:"Seulement les livraisons de votre entrepôt",lg_l2:"Comptage à l'aveugle avec recomptage automatique",lg_l3:"Photos et bon de réception en une étape",lg_l4:"Signaler un retard en deux touches",logout:"Déconnexion"});
 const t=k=>(L[lang]&&L[lang][k])||L.en[k]||k;
 const CONDS=[["Good","✅","c_Good"],["Shifted load","↔️","c_Shifted"],["Collapsed pallets","⬇️","c_Collapsed"],["Double-stacked","⏫","c_Double"],["Torn / leaking bags","🩹","c_Torn"],["Wet / dirty","💧","c_Wet"],["Other","❓","c_Other"]];
 const REASONS=["r_notarr","r_customs","r_docs","r_seal","r_wrong","r_dmg","r_dock","r_other"];
@@ -62,32 +63,44 @@ function showLogin(msg){loginMsg=msg;const lg=$("login");lg.classList.remove("hi
 
 const slaPill=r=>r.sla?`<span class="sla sla-${r.sla.lvl}"><span aria-hidden="true">${ICON[r.sla.lvl]}</span> ${esc(t("sla_"+r.sla.lvl))}</span>`:"";
 
+const LVL=["esc","nudge","due","paused","tom","up"],lvRank=r=>{const i=r.sla?LVL.indexOf(r.sla.lvl):-1;return i<0?99:i};
+let q="";
+/** Group lines that arrive together (same container, or same PO without a container) into one shipment card. */
+function shipments(rows){const m=new Map();rows.forEach(r=>{if(!m.has(r.ship))m.set(r.ship,[]);m.get(r.ship).push(r)});
+ return[...m.values()].map(ls=>{const rep=ls.slice().sort((a,b)=>lvRank(a)-lvRank(b))[0];return Object.assign({},rep,{lines:ls,req:ls.some(x=>x.req),delay:ls.map(x=>x.delay).find(Boolean)||null,pos:[...new Set(ls.map(x=>x.po))]})})}
 function render(){
- const rows=DATA.rows,todo=rows.filter(r=>!r.sent),done=rows.filter(r=>r.sent);
+ const rows=DATA.rows,todoL=rows.filter(r=>!r.sent),done=rows.filter(r=>r.sent);
+ const ql=q.trim().toLowerCase(),hit=g=>!ql||g.lines.some(x=>[x.po,x.cntr,x.item,x.desc].join(" ").toLowerCase().includes(ql));
+ const todo=shipments(todoL).filter(hit);
  const lv=r=>r.sla&&r.sla.lvl;
  const req=todo.filter(r=>r.req),rest=todo.filter(r=>!r.req);
  const late=rest.filter(r=>["esc","nudge"].includes(lv(r))),paused=rest.filter(r=>lv(r)==="paused"),today=rest.filter(r=>lv(r)==="due"),tom=rest.filter(r=>lv(r)==="tom"),later=rest.filter(r=>!lv(r)||lv(r)==="up");
- const card=r=>`<div class="pocard lvl-${r.sent?"none":(lv(r)||"none")}"><button type="button" class="po ${r.req?"req":""}" data-po="${esc(r.id)}">
-   <div><div class="big mono">PO ${esc(r.po)}${r.cntr?` <span style="font-weight:500;color:var(--muted);font-size:15px">· ${esc(r.cntr)}</span>`:""}</div>
-   <div class="m">${esc(r.desc)} · ${fmt(r.plt)} ${t("pallets")} · ${esc(loadTxt(r.load))}</div><div class="m">${t("expected")}${t("colon")} <b style="color:var(--ink)">${fd(r.eta)}</b></div>
+ const card=r=>{const many=r.lines&&r.lines.length>1,names=(r.lines||[r]).map(x=>x.desc);
+  return `<div class="pocard lvl-${r.sent?"none":(lv(r)||"none")}"><button type="button" class="po ${r.req?"req":""}" data-po="${esc(r.id)}">
+   <div><div class="big mono">${r.cntr&&!r.sent?esc(r.cntr):"PO "+esc((r.pos||[r.po]).join(", "))}</div>
+   <div class="m">${r.cntr&&!r.sent?"PO "+esc((r.pos||[r.po]).join(", "))+" · ":""}${many?`<b>${r.lines.length} ${t("it_n")}</b> · `:esc(r.item)+" "}${esc(names.slice(0,many?3:1).join(" · "))}${many&&names.length>3?" · +"+(names.length-3):""}</div>
+   <div class="m">${r.shipPlt!=null&&r.shipPlt!==""?fmt(r.shipPlt)+" "+t("pallets")+" · ":""}${esc(loadTxt(r.load))} · ${t("expected")}${t("colon")} <b style="color:var(--ink)">${fd(r.eta)}</b></div>
    ${!r.sent?`<div style="margin-top:6px">${slaPill(r)}</div>`:""}${r.delay?`<div class="m" style="color:#5b3a91;margin-top:4px">⏸ ${esc(t(r.delay.reason))}${r.delay.newDate?" · "+t("d_new")+t("colon")+" "+fds(r.delay.newDate):""}</div>`:""}</div>
    ${r.sent?`<span class="pill ${r.sent.damage?"p-dmg":"p-done"}">${r.sent.damage?t("sent_issue"):t("sent")}</span>`:`<span class="go">${r.req?t("recount_req"):t("receive")} →</span>`}</button>
-   ${!r.sent?`<button type="button" class="delaybtn" data-delay="${esc(r.id)}">${r.delay?t("d_solve"):t("delay_btn")}</button>`:""}</div>`;
+   ${!r.sent?`<button type="button" class="delaybtn" data-delay="${esc(r.id)}">${r.delay?t("d_solve"):t("delay_btn")}</button>`:""}</div>`};
  const grp=(title,arr,color)=>arr.length?`<div class="group" ${color?`style="color:${color}"`:""}>${title}</div>${arr.map(card).join("")}`:"";
  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
- const counts=[late.length?`<b style="color:#b0182f">${late.length}</b> ${t("late_n")}`:"",today.length?`<b>${today.length}</b> ${t("today")}`:"",`<b>${todo.length}</b> ${t("toRecv")}`,req.length?`<b style="color:var(--amber)">${req.length}</b> ${t("recounts")}`:""].filter(Boolean).join(" · ");
+ const counts=[late.length?`<b style="color:#b0182f">${late.length}</b> ${t("late_n")}`:"",today.length?`<b>${today.length}</b> ${t("today")}`:"",`<b>${shipments(todoL).length}</b> ${t("toRecv")}`,req.length?`<b style="color:var(--amber)">${req.length}</b> ${t("recounts")}`:""].filter(Boolean).join(" · ");
  $("main").innerHTML=`<div class="hello"><h2 tabindex="-1">${t("hi")}, ${lang==="fr"?t("team")+" "+esc(NAME):esc(NAME)+" "+t("team")}</h2><p>${t("tap")}</p></div>
  <p class="slarule">⏱ ${t("sla_rule")}</p><p class="chip-line">${counts}</p>
  <button type="button" class="unpl" id="unpl">${t("unpl_btn")}</button>
- <div class="tabs"><button type="button" aria-pressed="${tab==="todo"}" data-t2="todo" class="${tab==="todo"?"on":""}">${t("tab_todo")} (${todo.length})</button><button type="button" aria-pressed="${tab==="done"}" data-t2="done" class="${tab==="done"?"on":""}">${t("tab_done")} (${done.length})</button></div>
+ <label for="pq" class="sr">${t("search")}</label><input id="pq" class="in" type="search" placeholder="${esc(t("search_ph"))}" value="${esc(q)}" style="margin:0 0 12px">
+ <div class="tabs"><button type="button" aria-pressed="${tab==="todo"}" data-t2="todo" class="${tab==="todo"?"on":""}">${t("tab_todo")} (${shipments(todoL).length})</button><button type="button" aria-pressed="${tab==="done"}" data-t2="done" class="${tab==="done"?"on":""}">${t("tab_done")} (${done.length})</button></div>
  <div class="list">${tab==="todo"?(todo.length?grp(t("g_recount"),req,"var(--amber)")+grp(cap(t("late_n")),late,"#b0182f")+grp(t("g_today"),today)+grp(t("sla_paused"),paused,"#5b3a91")+grp(t("g_tom"),tom)+grp(t("g_later"),later):`<div class="empty">${t("empty_todo")}</div>`):(done.length?done.map(card).join(""):`<div class="empty">${t("empty_done")}</div>`)}</div>`;
  document.querySelectorAll("[data-t2]").forEach(b=>b.onclick=()=>{tab=b.dataset.t2;render()});
  document.querySelectorAll(".po").forEach(el=>el.onclick=()=>{const r=DATA.rows.find(x=>x.id===el.dataset.po);r.sent?showSent(r):openReceive(r)});
+ const pq=$("pq");pq.oninput=e=>{q=e.target.value;clearTimeout(pq.t);pq.t=setTimeout(()=>{render();const n=$("pq");n.focus();n.setSelectionRange(n.value.length,n.value.length)},250)};
  document.querySelectorAll("[data-delay]").forEach(b=>b.onclick=()=>openDelay(DATA.rows.find(x=>x.id===b.dataset.delay)));
  $("unpl").onclick=openUnplanned;
 }
 
-const RCV={check:(r,c)=>call("portalCheck",TOKEN,r.id,c),submit:(r,pl)=>call("portalSubmit",TOKEN,r.id,pl),after:(r,next)=>{if(next)tab="todo";load()}};
+const RCV={lines:r=>DATA.rows.filter(x=>x.ship===r.ship&&!x.sent),askP:r=>!!r.askP,upload:f=>call("portalUpload",TOKEN,f),
+ check:(r,c)=>call("portalCheckShip",TOKEN,r.id,c),submit:(r,pl)=>call("portalSubmitShip",TOKEN,r.id,pl),after:(r,next)=>{if(next)tab="todo";load()}};
 function showSent(r){const s=r.sent,q=o=>`${fmt(o.plt)} ${t("u_plt")} / ${fmt(o.cs)} ${t("u_cs")}${o.lbs!==""&&o.lbs!=null?" / "+fmt(o.lbs)+" "+t("u_lb"):""}`;
  openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><div class="dsub">${t("ro")} · ${esc(s.at)}</div><h2 class="mono" id="dtitle" tabindex="-1">PO ${esc(r.po)}</h2><div>${esc(r.item)} · ${esc(r.desc)}</div></div>
  <div class="db"><div class="sec"><div class="grid2 box"><span class="k">${t("date")}</span><span>${fd(s.recv)}</span>
@@ -109,7 +122,7 @@ function drawDelay(){const r=cur,miss=!dform.reason?t("d_miss_r"):dform.note.tri
  <div class="db"><p style="font-size:14px">${t("delay_p")}</p><div class="step"><h4>${t("d_reason")}</h4><div class="cond" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">${REASONS.map(x=>`<button type="button" data-rs="${x}" aria-pressed="${dform.reason===x}" class="${dform.reason===x?"on":""}">${t(x)}</button>`).join("")}</div></div>
   <div class="step"><label for="d_note" style="font-size:16px">${t("d_note")}</label><textarea id="d_note" rows="3" placeholder="${esc(t("d_note_ph"))}">${esc(dform.note)}</textarea>
    <div style="margin-top:10px"><label for="d_new">${t("d_new")}</label><input class="in big-in" type="date" id="d_new" min="${DATA.today}" value="${esc(dform.newDate)}"></div>
-   <label class="drop" style="margin-top:10px"><input type="file" accept="image/*,application/pdf" capture="environment" multiple id="d_pic">${t("d_pic")}</label>${thumbs(dform.pics)}</div></div>
+   <label class="drop" style="margin-top:10px"><input type="file" accept="image/*,application/pdf" multiple id="d_pic">${t("d_pic")}</label>${thumbs(dform.pics)}</div></div>
  <div class="foot"><div class="prog" id="dmiss">${miss?`<span style="color:#b0182f;font-weight:600">${t("d_miss")}${t("colon")} ${miss}</span>`:""}</div><button type="button" class="btn" id="d_send" ${miss?"disabled":""}>${t("d_send")}</button></div>`);
  const chk=()=>{const m=!dform.reason?t("d_miss_r"):dform.note.trim().length<5?t("d_miss_n"):"";$("d_send").disabled=!!m;$("dmiss").innerHTML=m?`<span style="color:#b0182f;font-weight:600">${t("d_miss")}${t("colon")} ${m}</span>`:""};
  document.querySelectorAll("[data-rs]").forEach(b=>b.onclick=()=>{dform.reason=b.dataset.rs;dform.note=$("d_note").value;dform.newDate=$("d_new").value;drawDelay()});
@@ -122,8 +135,8 @@ let uform;
 function openUnplanned(){uform={po:"",cntr:"",sup:"",desc:"",plt:"",doc:[],load:[]};drawUnplanned()}
 function drawUnplanned(){const ok=uform.doc.length&&uform.desc.trim();
  openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><h2 id="dtitle" tabindex="-1">${t("unpl_h")}</h2></div>
- <div class="db"><p style="font-size:14px">${t("unpl_p")}</p><div class="step"><label class="drop"><input type="file" accept="image/*,application/pdf" capture="environment" multiple data-uf="doc">${t("u_doc")}</label>${thumbs(uform.doc)}
-  <label class="drop" style="margin-top:10px"><input type="file" accept="image/*" capture="environment" multiple data-uf="load">${t("u_load")}</label>${thumbs(uform.load)}</div>
+ <div class="db"><p style="font-size:14px">${t("unpl_p")}</p><div class="step"><label class="drop"><input type="file" accept="image/*,application/pdf" multiple data-uf="doc">${t("u_doc")}</label>${thumbs(uform.doc)}
+  <label class="drop" style="margin-top:10px"><input type="file" accept="image/*" multiple data-uf="load">${t("u_load")}</label>${thumbs(uform.load)}</div>
   <div class="step"><div class="row r2"><div><label for="u_po">${t("u_po")}</label><input class="in big-in" id="u_po" inputmode="numeric" value="${esc(uform.po)}"></div><div><label for="u_cntr">${t("u_cntr")}</label><input class="in big-in" id="u_cntr" value="${esc(uform.cntr)}"></div></div>
   <div style="margin-top:10px"><label for="u_desc">${t("u_desc")}</label><input class="in big-in" id="u_desc" value="${esc(uform.desc)}"></div>
   <div class="row r2" style="margin-top:10px"><div><label for="u_sup">${t("u_sup")}</label><input class="in big-in" id="u_sup" value="${esc(uform.sup)}"></div><div><label for="u_plt">${t("u_plts")}</label><input class="in big-in" id="u_plt" type="number" inputmode="numeric" min="0" value="${esc(uform.plt)}"></div></div></div></div>

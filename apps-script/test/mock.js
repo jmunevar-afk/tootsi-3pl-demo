@@ -2,7 +2,7 @@
 // Replaces Google services (Sheets, Drive, Mail, Session, Lock) with an in-memory store saved in localStorage.
 // Used for the local tests and the preview. NOT part of the Apps Script project.
 (function(){
-const KEY="pohub_gws_preview_v2";
+const KEY="pohub_gws_preview_v3";
 const pad=v=>String(v).padStart(2,"0");
 function mockNow(){if(window.MOCK_NOW)return new Date(window.MOCK_NOW);return new Date()}
 function ymd(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
@@ -24,7 +24,7 @@ function sha256(str){const K=[],H=[];let n=2,c=0;const ip=x=>{for(let d=2;d*d<=x
 window.MOCK_SHA=s=>sha256(s).map(x=>("0"+(x&255).toString(16)).slice(-2)).join("");
 const CACHE={};window.CacheService={getScriptCache:()=>({get:k=>CACHE[k]===undefined?null:CACHE[k],put:(k,v)=>{CACHE[k]=v},remove:k=>{delete CACHE[k]}})};
 window.Session={getActiveUser:()=>({getEmail:()=>window.MOCK_USER||""})};
-window.LockService={getScriptLock:()=>({waitLock(){},releaseLock(){}})};
+window.LockService={getScriptLock:()=>({waitLock(){},tryLock(){return true},releaseLock(){}})};
 window.MOCK_MAIL=[];window.MailApp={sendEmail:o=>window.MOCK_MAIL.push(o)};
 window.PropertiesService={getScriptProperties:()=>({getProperty:()=>null,setProperty(){}})};
 window.Logger={log:()=>{}};
@@ -46,6 +46,10 @@ function seed(){
   {id:"90203|14015",po:"90203",item:"14015",wh:"DL",desc:"SULTANA RAISINS (TURKEY)",supplier:"Raisin packer · Türkiye",eta:bd(2),cntr:"MSBU1188204",plt:20,cs:1600,lbs:44096,load:"FCL 20' · Floor loaded",alloc:"Production",qc:"Locked",qcAt:bd(-1),source:"sheet",addedBy:"Import",tplInstr:"Floor-loaded. Photograph the open container before unloading."},
   {id:"90204|10711",po:"90204",item:"10711",wh:"DL",desc:"TURKISH APRICOTS",supplier:"Apricot packer · Türkiye",eta:bd(-1),cntr:"MEDU9047731",plt:17,cs:1299,lbs:36372,load:"FCL 40' · Palletized",alloc:"Sales",so:"SO 118412",qc:"Not received",source:"sheet",addedBy:"Import"},
   {id:"90301|10501",po:"90301",item:"10501",wh:"BM",desc:"FANCY JUMBO PECAN HALVES",supplier:"Pecan sheller · Mexico",eta:today,cntr:"",plt:22,cs:1680,lbs:41580,load:"FTL · Palletized",alloc:"Sales",so:"SO 118455",qc:"Not received",source:"sheet",addedBy:"Import"},
+  {id:"90410|80450",po:"90410",item:"80450",wh:"TP",desc:"STRAWBERRY CANDY BRICKS",supplier:"Candy maker · Spain",eta:bd(-1),cntr:"OOLU5550001",plt:21,cs:"",lbs:1670,load:"FCL 40' · Palletized",alloc:"",qc:"Not received",source:"sheet",addedBy:"Import"},
+  {id:"90410|80451",po:"90410",item:"80451",wh:"TP",desc:"RASPBERRY CANDY BRICKS",supplier:"Candy maker · Spain",eta:bd(-1),cntr:"OOLU5550001",plt:21,cs:"",lbs:1670,load:"FCL 40' · Palletized",alloc:"",qc:"Not received",source:"sheet",addedBy:"Import"},
+  {id:"90410|80490",po:"90410",item:"80490",wh:"TP",desc:"SUGARED JELLY MANDARINS",supplier:"Candy maker · Spain",eta:bd(-1),cntr:"OOLU5550001",plt:21,cs:"",lbs:2200,load:"FCL 40' · Palletized",alloc:"",qc:"Not received",source:"sheet",addedBy:"Import"},
+  {id:"90410|80492",po:"90410",item:"80492",wh:"TP",desc:"GUMMY MULTICOLOR RINGS",supplier:"Candy maker · Spain",eta:bd(-1),cntr:"OOLU5550001",plt:21,cs:"",lbs:1900,load:"FCL 40' · Palletized",alloc:"",qc:"Not received",source:"sheet",addedBy:"Import"},
   {id:"90402|10307",po:"90402",item:"10307",wh:"",desc:"DRY ROASTED SALTED CALIFORNIA PISTACHIOS",supplier:"Pistachio processor · California",eta:bd(4),cntr:"",plt:20,cs:"",lbs:10000,load:"FTL · Palletized",alloc:"",qc:"Not received",source:"sheet",addedBy:"Import"}
  ],Submissions:[
   {subId:"s1",id:"90203|14015",seq:1,superseded:false,by:"Deslauriers receiving",at:bd(-1)+" 14:10",recv:bd(-1),plt:20,cs:1580,lbs:43545,firstJson:{plt:20,cs:1578,lbs:43490},diffNote:"Recounted twice. 20 cases missing.",lot:"450072532-14-585",exp:"2027-09-30",cond:"Torn / leaking bags",damage:true,dmgText:"2 bags torn on bottom of pallet 7, product spilled.",comment:"Seal intact. Bottom row crushed.",filesJson:[{cat:"Load photo (before unloading)",name:"container_open.jpg",url:"#"},{cat:"Label photo",name:"label_14015.jpg",url:"#"},{cat:"Receiving document",name:"DL_receiving_90203.pdf",url:"#"},{cat:"Damage photo",name:"damage_pallet7.jpg",url:"#"}]}
@@ -53,8 +57,8 @@ function seed(){
  Delays:[{delayId:"d1",id:"90204|10711",reason:"r_customs",note:"Container held at customs. Broker expects release in 2 days.",newDate:bd(2),by:"Deslauriers receiving",at:bd(-1)+" 15:30",date:bd(-1),closedAt:"",filesJson:[]}],
  Recounts:[],Docs:[{id:"90203|14015",cat:"Supplier packing list",name:"packing_list_90203.pdf",url:"#",by:"purchasing@tootsi.com",at:bd(-3)+" 10:00"}],
  SupplierQty:[{id:"90203|14015",kind:"pl",plt:20,cs:1600,lbs:44096,by:"Purchasing",at:bd(-3)+" 10:00"}],
- Users:[{token:"u-tp-0000000000000000000000000001",wh:"TP",name:"Trans-Plus",email:"",active:true,user:"transplus",salt:"s1",passHash:window.MOCK_SHA("s1|demo-tp")},{token:"u-dl-0000000000000000000000000002",wh:"DL",name:"Deslauriers",email:"",active:true,user:"deslauriers",salt:"s2",passHash:window.MOCK_SHA("s2|demo-dl")}],Sessions:[],
- Config:Object.entries({DOMAIN:"tootsi.com",SESSION_HOURS:12,SLA_NUDGE_H:9,SLA_ESC_H:18,LB_TOLERANCE:0.01,QC_DAYS:2,HOLIDAYS:"",EMAIL_ON:"yes",PILOT_ONLY_ME:"yes",FALLBACK_EMAIL:"juan@tootsi.com",EMAIL_3PL:"no",LANG_TP:"fr",LANG_DL:"fr",DIGEST_TO:"juan@tootsi.com"}).map(([key,value])=>({key,value})),
+ Users:[{token:"u-tp-0000000000000000000000000001",wh:"TP",name:"Trans-Plus",email:"",active:true,user:"transplus",salt:"s1",passHash:window.MOCK_SHA("s1|demo-tp")},{token:"u-dl-0000000000000000000000000002",wh:"DL",name:"Deslauriers",email:"",active:true,user:"deslauriers",salt:"s2",passHash:window.MOCK_SHA("s2|demo-dl")}],Sessions:[],Checks:[],
+ Config:Object.entries({DOMAIN:"tootsi.com",SESSION_HOURS:12,GO_LIVE:bd(-6),PORTAL_URL:"3pl.html",SLA_NUDGE_H:9,SLA_ESC_H:18,LB_TOLERANCE:0.01,QC_DAYS:2,HOLIDAYS:"",EMAIL_ON:"yes",PILOT_ONLY_ME:"yes",FALLBACK_EMAIL:"juan@tootsi.com",EMAIL_3PL:"no",LANG_TP:"fr",LANG_DL:"fr",DIGEST_TO:"juan@tootsi.com"}).map(([key,value])=>({key,value})),
  Log:[]};
  save();
 }
@@ -64,13 +68,16 @@ window.MOCK_DB=()=>DB;window.MOCK_RESEED=()=>{seed()};
 
 // ---------- replace Store.gs primitives ----------
 const clone=o=>JSON.parse(JSON.stringify(o));
-window.readAll=name=>{const cols=TABLES[name];return (DB[name]||[]).map(r=>{const o={};cols.forEach(c=>{o[c]=r[c]===undefined?(/Json$/.test(c)?null:""):r[c]});return clone(o)})};
-window.append=(name,o)=>{const r={};TABLES[name].forEach(c=>{if(o[c]!==undefined)r[c]=clone(o[c]===null?"":o[c])});(DB[name]=DB[name]||[]).push(r);save()};
-window.upsert=(name,key,o)=>{const arr=DB[name]=DB[name]||[];const i=arr.findIndex(r=>String(r[key])===String(o[key]));const r=i>=0?arr[i]:{};TABLES[name].forEach(c=>{if(c in o&&c[0]!=="_")r[c]=clone(o[c]===undefined?"":o[c])});if(i<0)arr.push(r);save()};
-window.upsertWhere=(name,match,o)=>{const arr=DB[name]=DB[name]||[];const i=arr.findIndex(r=>match(r));if(i>=0)arr[i]=clone(o);else arr.push(clone(o));save()};
-window.deleteWhere=(name,match)=>{DB[name]=(DB[name]||[]).filter(r=>!match(r));save()};
+window.readAll_=name=>{const cols=TABLES[name];return (DB[name]||[]).map(r=>{const o={};cols.forEach(c=>{o[c]=r[c]===undefined?(/Json$/.test(c)?null:""):r[c]});return clone(o)})};
+window.append_=(name,o)=>{const r={};TABLES[name].forEach(c=>{if(o[c]!==undefined)r[c]=clone(o[c]===null?"":o[c])});(DB[name]=DB[name]||[]).push(r);save()};
+window.upsert_=(name,key,o)=>{const arr=DB[name]=DB[name]||[];const i=arr.findIndex(r=>String(r[key])===String(o[key]));const r=i>=0?arr[i]:{};TABLES[name].forEach(c=>{if(c in o&&c[0]!=="_")r[c]=clone(o[c]===undefined?"":o[c])});if(i<0)arr.push(r);save()};
+window.upsertWhere_=(name,match,o)=>{const arr=DB[name]=DB[name]||[];const i=arr.findIndex(r=>match(r));if(i>=0)arr[i]=clone(o);else arr.push(clone(o));save()};
+window.deleteWhere_=(name,match)=>{DB[name]=(DB[name]||[]).filter(r=>!match(r));save()};
 window.clearCache_=()=>{};
 window.saveFile_=(id,f)=>({name:f.name,url:"#preview-file",fileId:"x"});
+const INC={};let incN=0;
+window.saveIncoming_=(who,f)=>{const fid="inc"+(++incN);INC[fid]={who,name:f.name};return{fid,name:f.name}};
+window.takeFile_=(fid,who,poId)=>{const x=INC[fid];if(!x||x.who!==who)throw new Error("A photo was not uploaded. Please add it again.");delete INC[fid];return{name:x.name,url:"#preview-file",fileId:fid}};
 window.today_=()=>ymd(mockNow());
 window.nowStamp_=()=>{const d=mockNow();return ymd(d)+" "+pad(d.getHours())+":"+pad(d.getMinutes())};
 window.ctx_=()=>({cfg:config_(),today:today_(),nowH:mockNow().getHours(),stamp:nowStamp_()});

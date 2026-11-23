@@ -1,78 +1,118 @@
 <script>
-/* Receiving form shared by the 3PL portal and Tootsi receiving (BM/LY/HB).
-   The page sets RCV = {check(row,count), submit(row,payload), after(row,next), title, nextLabel} */
-// ---------- receiving ----------
-let form,cur;
-function openReceive(r){cur=r;form={recv:DATA.today,plt:"",cs:"",lbs:"",lot:"",exp:"",label:[],doc:[],loadPics:[],cond:"",dmgText:"",dmgPics:[],legible:false,stage:"count",checked:false,checkOk:false,first:null,rplt:"",rcs:"",rlbs:"",diffNote:"",needNote:false,comment:"",banner:false};drawReceive()}
-const curCount=()=>form.stage==="count"?{plt:numv(form.plt),cs:numv(form.cs),lbs:numv(form.lbs)}:{plt:numv(form.rplt),cs:numv(form.rcs),lbs:numv(form.rlbs)};
-function steps(){const bad=form.cond&&form.cond!=="Good",c=curCount(),lb=form.stage==="count"?form.lbs:form.rlbs;
- const nums=c.plt!=null&&c.plt>=0&&c.cs!=null&&c.cs>=0&&(lb===""||(numv(lb)!=null&&numv(lb)>=0)),dateOk=!!form.recv&&form.recv<=DATA.today;
- return[{k:"s1",ok:form.loadPics.length>0,m:"m1"},
+/* Receiving form for a whole SHIPMENT (one container, or one PO without a container), shared by the 3PL portal
+   and Tootsi receiving (BM/LY/HB). The page sets:
+   RCV = { lines(row) -> [rows of the same shipment still to receive], askP(row) -> true if pallets are counted now,
+           upload(file) -> {fid}, check(row,count) -> {match,off,limit}, submit(row,payload), after(row,next), title, nextLabel } */
+Object.assign(L.en,{it_h:"Items in this shipment",it_n:"items",it_cs:"Cases",it_lb:"lb (optional)",it_lbl:"Label photo",it_lot:"Lot",it_exp:"Expiry",it_zero:"0 cases: this item did not come (no label needed).",
+ sh_plt:"Total pallets in the shipment",s2pm:"Count the pallets for the whole shipment, then the cases of each item.",s2rpm:"These numbers are different from the PO. Count them again:",
+ limit:"The count still does not match. Explain the difference below, then send.",up_wait:"Uploading photos…",up_err:"A photo did not upload. Add it again.",s3m:"For each item that came: a clear photo of the label, the lot and the expiry date.",
+ m3m:"label photo, lot and expiry for each item",off_plt:"Total pallets",ok_line:"matches",cnt_first:"first count"});
+Object.assign(L.fr,{it_h:"Articles de cette livraison",it_n:"articles",it_cs:"Caisses",it_lb:"lb (facultatif)",it_lbl:"Photo de l'étiquette",it_lot:"Lot",it_exp:"Expiration",it_zero:"0 caisse : cet article n'est pas arrivé (pas d'étiquette).",
+ sh_plt:"Total des palettes de la livraison",s2pm:"Comptez les palettes de toute la livraison, puis les caisses de chaque article.",s2rpm:"Ces chiffres ne correspondent pas à la commande. Recomptez-les :",
+ limit:"Le compte ne correspond toujours pas. Expliquez l'écart ci-dessous, puis envoyez.",up_wait:"Envoi des photos…",up_err:"Une photo n'a pas été envoyée. Ajoutez-la de nouveau.",s3m:"Pour chaque article reçu : une photo claire de l'étiquette, le lot et la date d'expiration.",
+ m3m:"photo, lot et expiration de chaque article",off_plt:"Total des palettes",ok_line:"correspond",cnt_first:"premier compte"});
+let form,cur,curLines;
+function openReceive(r){cur=r;curLines=RCV.lines(r);const askP=RCV.askP(r);
+ form={recv:DATA.today,askP,plt:"",rplt:"",li:{},loadPics:[],doc:[],cond:"",dmgText:"",dmgPics:[],legible:false,stage:"count",checked:false,checkOk:false,off:[],needNote:false,limit:false,diffNote:"",comment:"",banner:false,up:0};
+ curLines.forEach(x=>form.li[x.id]={cs:"",lbs:"",rcs:"",rlbs:"",lot:"",exp:"",label:[]});drawReceive()}
+const isOff=k=>form.stage==="recount"&&form.off.indexOf(k)>=0;
+/** The count that is checked and sent: recount values replace the first count for the lines that were off. */
+function curCount(){return{plt:form.askP?numv(isOff("pallets")?form.rplt:form.plt):null,lines:curLines.map(x=>{const v=form.li[x.id],o=isOff(x.id);return{id:x.id,cs:numv(o?v.rcs:v.cs),lbs:numv(o?v.rlbs:v.lbs)}})}}
+const came=id=>{const c=curCount().lines.find(z=>z.id===id);return c&&c.cs>0};
+function steps(){const bad=form.cond&&form.cond!=="Good",c=curCount();
+ const nums=(!form.askP||(c.plt!=null&&c.plt>=0))&&c.lines.every(z=>z.cs!=null&&z.cs>=0&&(z.lbs==null||z.lbs>=0)),dateOk=!!form.recv&&form.recv<=DATA.today;
+ const labelsOk=curLines.every(x=>{if(!came(x.id))return true;const v=form.li[x.id];return v.label.length>0&&v.lot.trim()&&v.exp&&v.exp>form.recv});
+ const expErr=curLines.some(x=>{const v=form.li[x.id];return came(x.id)&&v.exp&&v.exp<=form.recv});
+ return[{k:"s1",ok:!form.askP||form.loadPics.length>0,m:"m1"},
   {k:"s2",ok:nums&&dateOk&&form.checked&&(!form.needNote||form.diffNote.trim().length>=10),m:!nums||!dateOk?(form.stage==="recount"?"m2r":"m2"):!form.checked?"m2c":"m2n",err:!dateOk&&form.recv?"e_date":""},
-  {k:"s3",ok:form.label.length>0&&form.legible&&!!form.lot.trim()&&!!form.exp&&form.exp>form.recv,m:"m3",err:form.exp&&form.exp<=form.recv?"e_exp":""},
+  {k:"s3",ok:labelsOk&&form.legible,m:"m3m",err:expErr?"e_exp":""},
   {k:"s4",ok:form.doc.length>0,m:"m4"},
   {k:"s5",ok:!!form.cond&&(!bad||(form.dmgText.trim().length>=10&&form.dmgPics.length>0)),m:bad?"m5n":"m5"}]}
 function foot(){const f=$("foot");if(!f)return;const s=steps(),n=s.filter(x=>x.ok).length,miss=s.find(x=>!x.ok),onlyCheck=miss&&miss.m==="m2c"&&s.filter(x=>!x.ok).length===1;
- f.innerHTML=`<div class="prog">${s.map(x=>`<i class="${x.ok?"on":""}" aria-hidden="true"></i>`).join("")}<span>${t("steps")}${t("colon")} ${n}/5</span>${miss?`<button type="button" class="miss" data-goto="${miss.k}">${t("missing")}${t("colon")} ${t(miss.m)}</button>`:""}</div>
- <button type="button" class="btn" id="send" ${miss&&!onlyCheck?"disabled":""}>${t("send")}</button>`;
+ f.innerHTML=`<div class="prog">${s.map(x=>`<i class="${x.ok?"on":""}" aria-hidden="true"></i>`).join("")}<span>${form.up?t("up_wait"):t("steps")+t("colon")+" "+n+"/5"}</span>${miss&&!form.up?`<button type="button" class="miss" data-goto="${miss.k}">${t("missing")}${t("colon")} ${t(miss.m)}</button>`:""}</div>
+ <button type="button" class="btn" id="send" ${(miss&&!onlyCheck)||form.up?"disabled":""}>${t("send")}</button>`;
  s.forEach(x=>{const el=$("st_"+x.k);if(el)el.classList.toggle("ok",!!x.ok);const er=$("err_"+x.k);if(er)er.textContent=x.err?t(x.err):""});
- const g=f.querySelector("[data-goto]");if(g)g.onclick=()=>{const el=$("st_"+g.dataset.goto);el.scrollIntoView({behavior:"smooth",block:"start"})};
+ const g=f.querySelector("[data-goto]");if(g)g.onclick=()=>{$("st_"+g.dataset.goto).scrollIntoView({behavior:"smooth",block:"start"})};
  $("send").onmousedown=e=>e.preventDefault();$("send").onclick=submit}
+/** Upload each photo as soon as it is chosen (one server call per file). */
+async function addFiles(list,arr){for(const file of list){let rf;try{rf=await readFile(file)}catch(e){toast(e.message);continue}
+ const item={name:rf.name,preview:rf.preview,fid:null};arr.push(item);form.up++;drawReceive();
+ try{const r=await RCV.upload({name:rf.name,type:rf.type,data:rf.data});item.fid=r.fid}catch(e){arr.splice(arr.indexOf(item),1);toast(t("up_err")+" "+e.message)}
+ form.up--;drawReceive()}}
 function drawReceive(){
- const r=cur,recount=form.stage==="recount",bad=form.cond&&form.cond!=="Good",n=i=>`<span class="num" aria-hidden="true">${i}</span>`;
- const numIn=(id,lab,val,unit,mode)=>`<div class="unit"><label for="${id}">${lab}</label><input class="in" id="${id}" type="number" inputmode="${mode||"numeric"}" min="0" step="any" value="${esc(val)}"><i aria-hidden="true">${unit}</i></div>`;
+ const r=cur,recount=form.stage==="recount",bad=form.cond&&form.cond!=="Good",n=i=>`<span class="num" aria-hidden="true">${i}</span>`,many=curLines.length>1;
+ const inp=(id,val,mode,ph)=>`<input class="in" id="${id}" type="number" inputmode="${mode||"numeric"}" min="0" step="any" value="${esc(val)}" ${ph?`placeholder="${esc(ph)}"`:""}>`;
  const y=$("drawer").classList.contains("open")?$("drawer").scrollTop:0;
- openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><div class="dsub">${RCV.title||t("r_for")}</div><h2 class="mono" id="dtitle" tabindex="-1">PO ${esc(r.po)}</h2><div>${esc(r.item)} · ${esc(r.desc)}</div>
-  <div class="dsub" style="margin-top:4px">${r.cntr?`${t("container")}${t("colon")} <b class="mono">${esc(r.cntr)}</b> · `:""}${esc(loadTxt(r.load))} · ${fmt(r.plt)} ${t("pallets")} · ${t("expected")} ${fd(r.eta)}</div></div>
+ const pos=[...new Set(curLines.map(x=>x.po))].join(", ");
+ const lineCount=x=>{const v=form.li[x.id],o=isOff(x.id);
+  return `<div class="itrow ${o?"warn":""}"><div class="itname"><b class="mono">${esc(x.item)}</b> ${esc(x.desc)}${many&&curLines.some(z=>z.po!==x.po)?` <span class="small">PO ${esc(x.po)}</span>`:""}</div>
+   ${recount&&!o?`<div class="small" style="margin:0">${fmt(v.cs)} ${t("u_cs")}${v.lbs!==""?" · "+fmt(v.lbs)+" "+t("u_lb"):""} · ${t("ok_line")} ✓</div>`
+   :`<div class="itin"><div class="unit"><label for="c_${esc(x.id)}">${t("it_cs")}${o?` <span class="small">(${t("cnt_first")}: ${fmt(v.cs)})</span>`:""}</label>${inp("c_"+x.id,o?v.rcs:v.cs)}<i aria-hidden="true">${t("u_cs")}</i></div>
+    <div class="unit"><label for="w_${esc(x.id)}">${t("it_lb")}</label>${inp("w_"+x.id,o?v.rlbs:v.lbs,"decimal")}<i aria-hidden="true">${t("u_lb")}</i></div></div>`}</div>`};
+ const lineLabel=x=>{const v=form.li[x.id];if(!came(x.id))return `<div class="itrow"><div class="itname"><b class="mono">${esc(x.item)}</b> ${esc(x.desc)}</div><div class="small" style="margin:0">${t("it_zero")}</div></div>`;
+  return `<div class="itrow"><div class="itname"><b class="mono">${esc(x.item)}</b> ${esc(x.desc)}</div>
+   <label class="drop"><input type="file" accept="image/*" multiple data-lf="${esc(x.id)}">📷 ${t("it_lbl")}</label>${thumbs(v.label)}
+   <div class="row r2" style="margin-top:8px"><div><label for="l_${esc(x.id)}">${t("it_lot")}</label><input class="in" id="l_${esc(x.id)}" value="${esc(v.lot)}" autocapitalize="characters" autocomplete="off"></div>
+   <div><label for="e_${esc(x.id)}">${t("it_exp")}</label><input class="in" id="e_${esc(x.id)}" type="date" value="${esc(v.exp)}"></div></div></div>`};
+ openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><div class="dsub">${RCV.title||t("r_for")}</div>
+  <h2 class="mono" id="dtitle" tabindex="-1">${r.cntr?esc(r.cntr):"PO "+esc(pos)}</h2><div>${r.cntr?"PO "+esc(pos)+" · ":""}${many?curLines.length+" "+t("it_n"):esc(r.item)+" · "+esc(r.desc)}</div>
+  <div class="dsub" style="margin-top:4px">${esc(loadTxt(r.load))}${form.askP&&r.shipPlt!=null&&r.shipPlt!==""?" · "+fmt(r.shipPlt)+" "+t("pallets"):""} · ${t("expected")} ${fd(r.eta)}</div></div>
  <div class="db">
   ${form.banner?`<div class="sec"><div class="banner" role="alert">${t("notsent")}</div></div>`:r.req?`<div class="sec"><div class="banner">${t("r_req")}</div></div>`:""}
   ${r.instr?`<div class="sec"><div class="instr"><b>${t("instr")}${t("colon")}</b> ${esc(r.instr)}</div></div>`:""}
   <div class="sec">
-   <div class="step" id="st_s1"><h4>${n(1)}${t("s1")}</h4><p>${t("s1p")}</p><label class="drop"><input type="file" accept="image/*" capture="environment" multiple data-f="loadPics">${t("s1b")}</label>${thumbs(form.loadPics)}</div>
+   ${form.askP?`<div class="step" id="st_s1"><h4>${n(1)}${t("s1")}</h4><p>${t("s1p")}</p><label class="drop"><input type="file" accept="image/*" multiple data-f="loadPics">${t("s1b")}</label>${thumbs(form.loadPics)}</div>`:`<div id="st_s1"></div>`}
    <div class="step ${recount?"warn":""}" id="st_s2"><h4>${n(2)}${recount?t("s2r"):t("s2")}</h4>
-    ${recount?`<p><b>${t("s2rp")}</b><br>${t("s2r_saved")}</p>`:`<p>${r.floor?t("s2pf"):t("s2p")} ${t("lbo_h")}</p><div style="margin-bottom:10px"><label for="f_recv">${t("date")}</label><input class="in big-in" id="f_recv" type="date" value="${esc(form.recv)}" max="${DATA.today}"></div>`}
-    <div class="count">${recount?numIn("f_rplt",r.floor?t("pltb"):t("plt"),form.rplt,t("u_plt"))+numIn("f_rcs",t("cs"),form.rcs,t("u_cs"))+numIn("f_rlbs",t("lbo"),form.rlbs,t("u_lb"),"decimal"):numIn("f_plt",r.floor?t("pltb"):t("plt"),form.plt,t("u_plt"))+numIn("f_cs",t("cs"),form.cs,t("u_cs"))+numIn("f_lbs",t("lbo"),form.lbs,t("u_lb"),"decimal")}</div>
+    ${recount?`<p><b>${t("s2rpm")}</b><br>${t("s2r_saved")}</p>`:`<p>${many?t("s2pm"):(r.floor?t("s2pf"):t("s2p"))} ${t("lbo_h")}</p><div style="margin-bottom:10px"><label for="f_recv">${t("date")}</label><input class="in big-in" id="f_recv" type="date" value="${esc(form.recv)}" max="${DATA.today}"></div>`}
+    ${form.askP?(recount&&!isOff("pallets")?`<div class="small">${t("sh_plt")}${t("colon")} ${fmt(form.plt)} · ${t("ok_line")} ✓</div>`
+      :`<div class="itrow ${isOff("pallets")?"warn":""}"><div class="unit"><label for="f_plt">${many?t("sh_plt"):(r.floor?t("pltb"):t("plt"))}${isOff("pallets")?` <span class="small">(${t("cnt_first")}: ${fmt(form.plt)})</span>`:""}</label>${inp(isOff("pallets")?"f_rplt":"f_plt",isOff("pallets")?form.rplt:form.plt)}<i aria-hidden="true">${t("u_plt")}</i></div></div>`):""}
+    ${many?`<h5 style="margin:12px 0 4px">${t("it_h")} (${curLines.length})</h5>`:""}${curLines.map(lineCount).join("")}
     <div class="ferr" id="err_s2" role="alert"></div>
-    ${form.needNote?`<p style="margin:12px 0 6px;color:var(--amber)"><b>${t("s2n")}</b></p><label for="f_note" class="sr">${t("s2n")}</label><textarea id="f_note" rows="2" placeholder="${esc(t("s2n_ph"))}">${esc(form.diffNote)}</textarea>`:""}
+    ${form.needNote?`<p style="margin:12px 0 6px;color:var(--amber)"><b>${form.limit?t("limit"):t("s2n")}</b></p><label for="f_note" class="sr">${t("s2n")}</label><textarea id="f_note" rows="2" placeholder="${esc(t("s2n_ph"))}">${esc(form.diffNote)}</textarea>`:""}
     ${form.checked&&form.checkOk?`<p style="margin:10px 0 0;color:var(--green);font-weight:500">${t("check_ok")}</p>`:""}
     ${!form.checked?`<button type="button" class="btn dark" id="chk" style="width:100%;margin-top:12px;min-height:52px">${t("check")}</button>`:""}</div>
-   <div class="step" id="st_s3"><h4>${n(3)}${t("s3")}</h4><p>${t("s3p")}</p><label class="drop"><input type="file" accept="image/*" capture="environment" multiple data-f="label">${t("s3b")}</label>${thumbs(form.label)}
-    <div class="row r2" style="margin-top:10px"><div><label for="f_lot">${t("lot")}</label><input class="in big-in" id="f_lot" value="${esc(form.lot)}" autocapitalize="characters" autocomplete="off"></div><div><label for="f_exp">${t("exp")}</label><input class="in big-in" id="f_exp" type="date" value="${esc(form.exp)}"></div></div>
+   <div class="step" id="st_s3"><h4>${n(3)}${t("s3")}</h4><p>${many?t("s3m"):t("s3p")}</p>${curLines.map(lineLabel).join("")}
     <div class="ferr" id="err_s3" role="alert"></div><label class="tick"><input type="checkbox" id="f_leg" ${form.legible?"checked":""}> ${t("leg")}</label></div>
    <div class="step" id="st_s4"><h4>${n(4)}${t("s4")}</h4><p>${t("s4p")}</p><label class="drop"><input type="file" accept="image/*,application/pdf" multiple data-f="doc">${t("s4b")}</label>${thumbs(form.doc)}</div>
    <div class="step" id="st_s5"><h4>${n(5)}${t("s5")}</h4><p>${t("s5p")}</p>
     <div class="cond" role="group" aria-label="${esc(t("s5"))}">${CONDS.map(c=>`<button type="button" data-c="${esc(c[0])}" aria-pressed="${form.cond===c[0]}" class="${form.cond===c[0]?"on":""} ${c[0]!=="Good"?"badc":""}"><span aria-hidden="true">${c[1]}</span>${t(c[2])}</button>`).join("")}</div>
-    ${bad?`<div style="margin-top:12px"><label for="f_dmg" class="sr">${t("s5n_ph")}</label><textarea id="f_dmg" rows="3" placeholder="${esc(t("s5n_ph"))}">${esc(form.dmgText)}</textarea><label class="drop" style="margin-top:10px"><input type="file" accept="image/*" capture="environment" multiple data-f="dmgPics">${t("s5b")}</label>${thumbs(form.dmgPics)}</div>`:""}</div>
+    ${bad?`<div style="margin-top:12px"><label for="f_dmg" class="sr">${t("s5n_ph")}</label><textarea id="f_dmg" rows="3" placeholder="${esc(t("s5n_ph"))}">${esc(form.dmgText)}</textarea><label class="drop" style="margin-top:10px"><input type="file" accept="image/*" multiple data-f="dmgPics">${t("s5b")}</label>${thumbs(form.dmgPics)}</div>`:""}</div>
    <div class="step"><h4><span class="num" style="background:#6b7075" aria-hidden="true">💬</span><label for="f_com" style="display:inline;margin:0;font-size:16px">${t("com")}</label> <span style="font-weight:400;color:var(--muted);font-size:13px">· ${t("opt")}</span></h4><p>${t("comp")}</p>
     <textarea id="f_com" rows="3" maxlength="500" placeholder="${esc(t("com_ph"))}">${esc(form.comment)}</textarea></div>
   </div></div><div class="foot" id="foot"></div>`);
  $("drawer").scrollTop=y;foot();
- const rd=()=>drawReceive();
- const bindNum=(id,k)=>{const el=$(id);if(el)el.oninput=e=>{form[k]=e.target.value;if(form.checked){form.checked=form.checkOk=form.needNote=false;rd();return}foot()}};
- [["f_plt","plt"],["f_cs","cs"],["f_lbs","lbs"],["f_rplt","rplt"],["f_rcs","rcs"],["f_rlbs","rlbs"]].forEach(a=>bindNum(...a));
- [["f_recv","recv"],["f_lot","lot"],["f_exp","exp"],["f_note","diffNote"],["f_dmg","dmgText"],["f_com","comment"]].forEach(([id,k])=>{const el=$(id);if(el)el.oninput=e=>{form[k]=e.target.value;foot()}});
+ const rd=()=>drawReceive(),reset=()=>{if(form.checked&&!form.limit){form.checked=form.checkOk=form.needNote=false;rd();return true}return false};
+ const bindNum=(id,set)=>{const el=$(id);if(el)el.oninput=e=>{set(e.target.value);if(reset())return;foot()}};
+ bindNum("f_plt",v=>form.plt=v);bindNum("f_rplt",v=>form.rplt=v);
+ curLines.forEach(x=>{const v=form.li[x.id],o=isOff(x.id);bindNum("c_"+x.id,z=>o?v.rcs=z:v.cs=z);bindNum("w_"+x.id,z=>o?v.rlbs=z:v.lbs=z);
+  const lo=$("l_"+x.id);if(lo)lo.oninput=e=>{v.lot=e.target.value;foot()};const ex=$("e_"+x.id);if(ex)ex.oninput=e=>{v.exp=e.target.value;foot()}});
+ [["f_recv","recv"],["f_note","diffNote"],["f_dmg","dmgText"],["f_com","comment"]].forEach(([id,k])=>{const el=$(id);if(el)el.oninput=e=>{form[k]=e.target.value;foot()}});
  $("f_leg").onchange=e=>{form.legible=e.target.checked;foot()};
- document.querySelectorAll("[data-f]").forEach(i=>i.onchange=async()=>{busy(true);try{for(const f of i.files)form[i.dataset.f].push(await readFile(f))}catch(e){toast(e.message)}busy(false);rd()});
+ document.querySelectorAll("[data-f]").forEach(i=>i.onchange=()=>addFiles([...i.files],form[i.dataset.f]));
+ document.querySelectorAll("[data-lf]").forEach(i=>i.onchange=()=>addFiles([...i.files],form.li[i.dataset.lf].label));
  document.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{form.cond=b.dataset.c;rd()});
  const ck=$("chk");if(ck){ck.onmousedown=e=>e.preventDefault();ck.onclick=()=>runCheck(false)}
 }
-/** Ask the server if the count matches. The answer is only yes / no. */
+/** Ask the server if the count matches. It answers which lines are off, never the expected numbers. 2 wrong checks max. */
 async function runCheck(fromSend){
- const c=curCount();if(c.plt==null||c.cs==null||c.plt<0||c.cs<0){foot();$(form.stage==="count"?"f_plt":"f_rplt").focus();return false}
+ const c=curCount();if((form.askP&&(c.plt==null||c.plt<0))||c.lines.some(z=>z.cs==null||z.cs<0)){foot();$("st_s2").scrollIntoView({behavior:"smooth",block:"start"});return false}
  busy(true);let res;try{res=await RCV.check(cur,c)}catch(e){busy(false);toast(e.message);return false}busy(false);
  if(res.match){form.checked=form.checkOk=true;form.banner=false;drawReceive();return true}
- if(form.stage==="count"){form.first=c;form.stage="recount";form.rplt=form.rcs=form.rlbs="";form.checked=form.checkOk=false;form.banner=fromSend;drawReceive();
-  setTimeout(()=>{fromSend?$("drawer").scrollTop=0:$("st_s2").scrollIntoView({behavior:"smooth",block:"start"});$("f_rplt").focus({preventScroll:true})},60);if(fromSend)toast(t("notsent"));return false}
- form.checked=true;form.checkOk=false;form.needNote=true;form.banner=false;drawReceive();setTimeout(()=>$("f_note")&&$("f_note").focus(),60);return false}
+ if(form.stage==="count"&&!res.limit){form.off=res.off||[];form.stage="recount";form.rplt="";curLines.forEach(x=>{form.li[x.id].rcs=form.li[x.id].rlbs=""});form.checked=form.checkOk=false;form.banner=fromSend;drawReceive();
+  setTimeout(()=>{fromSend?$("drawer").scrollTop=0:$("st_s2").scrollIntoView({behavior:"smooth",block:"start"});const f=$("f_rplt")||document.querySelector("#st_s2 input[type=number]");if(f)f.focus({preventScroll:true})},60);if(fromSend)toast(t("notsent"));return false}
+ if(form.stage==="count"&&res.limit){form.off=res.off||[]}
+ form.checked=true;form.checkOk=false;form.needNote=true;form.limit=!!res.limit;form.banner=false;drawReceive();setTimeout(()=>$("f_note")&&$("f_note").focus(),60);return false}
 async function submit(){
+ if(form.up)return;
  if(!form.checked){const ok=await runCheck(true);if(!ok)return}
  const s=steps();if(s.some(x=>!x.ok)){foot();$("st_"+s.find(x=>!x.ok).k).scrollIntoView({behavior:"smooth",block:"start"});return}
- const c=curCount(),strip=a=>a.map(f=>({name:f.name,type:f.type,data:f.data}));
- const payload={recv:form.recv,plt:c.plt,cs:c.cs,lbs:c.lbs,first:form.first,diffNote:form.diffNote,lot:form.lot,exp:form.exp,cond:form.cond,dmgText:form.dmgText,comment:form.comment,
-  loadFiles:strip(form.loadPics),labelFiles:strip(form.label),docFiles:strip(form.doc),dmgFiles:strip(form.dmgPics)};
+ const c=curCount(),ids=a=>a.filter(f=>f.fid).map(f=>f.fid);
+ const payload={recv:form.recv,plt:c.plt,diffNote:form.diffNote,cond:form.cond,dmgText:form.dmgText,comment:form.comment,load:ids(form.loadPics),doc:ids(form.doc),dmg:ids(form.dmgPics),
+  lines:c.lines.map(z=>{const v=form.li[z.id];return{id:z.id,cs:z.cs,lbs:z.lbs,lot:came(z.id)?v.lot:"",exp:came(z.id)?v.exp:"",label:came(z.id)?ids(v.label):[]}})};
  busy(true);let res;try{res=await RCV.submit(cur,payload)}catch(e){busy(false);toast(e.message==="RECOUNT"?t("notsent"):e.message);return}busy(false);
- openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><h2 id="dtitle" tabindex="-1" class="mono">PO ${esc(cur.po)}</h2></div>
- <div class="db"><div class="done-screen"><div class="ok" aria-hidden="true">✓</div><h2>${t("done_h")}</h2><p class="mono" style="font-size:16px">${fmt(c.plt)} ${t("u_plt")} · ${fmt(c.cs)} ${t("u_cs")}${c.lbs!=null?" · "+fmt(c.lbs)+" "+t("u_lb"):""}</p>
+ const tot=c.lines.reduce((a,z)=>a+(z.cs||0),0);
+ openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><h2 id="dtitle" tabindex="-1" class="mono">${cur.cntr?esc(cur.cntr):"PO "+esc(cur.po)}</h2></div>
+ <div class="db"><div class="done-screen"><div class="ok" aria-hidden="true">✓</div><h2>${t("done_h")}</h2><p class="mono" style="font-size:16px">${c.plt!=null?fmt(c.plt)+" "+t("u_plt")+" · ":""}${fmt(tot)} ${t("u_cs")}${curLines.length>1?" · "+curLines.length+" "+t("it_n"):""}</p>
   <p style="color:${res.flagged?"#b0182f":"var(--muted)"}">${res.flagged?t("done_p"):t("done_ok")}</p><button type="button" class="btn" id="nextd" style="min-width:220px;min-height:52px">${RCV.nextLabel||t("next")}</button></div></div>`);
  $("x").onclick=()=>{closeD();RCV.after(cur,false)};$("nextd").onclick=()=>{closeD();RCV.after(cur,true)};
 }

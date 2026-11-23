@@ -1,5 +1,8 @@
 # PO Hub · Google Workspace version · install guide
 
+> **Updating an existing install (v4 or later):** paste the new `PO_Hub_one_file.gs` over everything in `Code.gs`, Save, run `setup` once (it adds new columns and tabs without touching data), then Deploy › Manage deployments › edit each deployment › Version: New version › Deploy.
+
+
 Free pilot. It runs on Tootsi's Google Workspace account. No new software, no monthly bill.
 
 - **Database:** one Google Sheet (one tab per table).
@@ -89,7 +92,11 @@ All emails are off at first. In the Config tab:
 
 When the pilot looks right, set `PILOT_ONLY_ME` to `no`, then `EMAIL_3PL` to `yes`.
 
-## 7. Daily use
+## 7. Go-live date
+
+Config key `GO_LIVE` (yyyy-mm-dd). Lines whose ETA is before this date start their "late" clock on the go-live day, so day one does not open dozens of late alerts. Set it to the day the 3PLs start using the portal. Shipments that already arrived before then: open them in the hub and click **Received before the hub**.
+
+## 8. Daily use
 
 - **Expected cases:** the upcoming sheet has no cases column. Open the hub, filter **More filters › Missing expected cases**, and fill them in. The 3PL can't be checked against an empty number.
 - **POs not in the sheet** (LTL, small orders): use **＋ Add upcoming PO**.

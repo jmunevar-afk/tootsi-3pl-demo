@@ -5,7 +5,7 @@
 <header>
   <?!= include('Logo') ?>
   <div><h1>PO <span>Hub</span></h1><div class="hsub">Every PO, every document, every department · pilot</div></div>
-  <div class="who"><div class="nm"><div id="uname" style="font-weight:500"></div><div class="hsub">Tootsi Impex</div></div></div>
+  <div class="who"><a class="btn ghost" id="tplview" href="#" target="_blank" rel="noopener" style="display:none;min-height:36px;padding:4px 12px;font-size:13px;text-decoration:none">👁 See the 3PL view</a><div class="nm"><div id="uname" style="font-weight:500"></div><div class="hsub">Tootsi Impex</div></div></div>
 </header>
 <main id="main"><div class="loading">Loading POs…</div></main>
 <div class="scrim" id="scrim"></div>
@@ -25,23 +25,27 @@ const CATS=["Supplier packing list","Supplier loading report","Bill of lading","
 const ICON={up:"⚪",tom:"🔵",due:"🟡",nudge:"🟠",esc:"🔴",paused:"⏸"};
 let DATA=null,whF="",kpiF="",ownF="",qRaw="",view="table",welcome=true,openId=null;
 try{welcome=localStorage.getItem("pohub_welcome")!=="0"}catch(e){}
-const RCV={title:"Tootsi receiving",nextLabel:"Back to the PO",check:(r,c)=>call("hubAction",r.id,"check",c),submit:(r,pl)=>call("hubAction",r.id,"receive",pl),after:async(r)=>{await load();openPO(r.id)}};
+let HUBLINES=[];
+const RCV={title:"Tootsi receiving",nextLabel:"Back to the PO",lines:()=>HUBLINES,askP:r=>!!r.askP,upload:f=>call("hubUpload",f),
+ check:(r,c)=>call("hubAction",r.id,"check",c),submit:(r,pl)=>call("hubAction",r.id,"receive",pl),after:async(r)=>{await load();openPO(r.id)}};
 
-async function load(){try{DATA=await call("hubLoad");$("uname").textContent=DATA.me;render()}catch(e){$("main").innerHTML=`<div class="err">${esc(e.message)}</div>`}}
+async function load(){try{DATA=await call("hubLoad");$("uname").textContent=DATA.me;const tv=$("tplview");if(DATA.cfg&&DATA.cfg.portalUrl){tv.href=DATA.cfg.portalUrl+(DATA.cfg.portalUrl.indexOf("?")<0?"?":"&")+"view=3pl";tv.style.display=""}render()}catch(e){$("main").innerHTML=`<div class="err">${esc(e.message)}</div>`}}
 const slaPill=r=>r.sla?`<span class="sla sla-${r.sla.lvl}" ${r.sla.h?`title="${r.sla.h} business hours"`:""}><span aria-hidden="true">${ICON[r.sla.lvl]}</span> ${esc(r.slaText)}</span>`:"";
 const late=r=>r.sla&&(r.sla.lvl==="nudge"||r.sla.lvl==="esc");
 const allocPill=r=>r.alloc?`<span class="pill ${r.alloc==="Production"?"a-prod":r.alloc==="Sales"?"p-done":"p-todo"}">${esc(r.alloc)}${r.alloc==="Split"?(r.prodQty!==""?` ${fmt(r.prodQty)}/${fmt(r.salesQty)}`:" (set qty)"):""}</span>`:`<span class="pill p-dmg">Not set</span>`;
 const qcText=r=>r.qc==="Locked"?`QC locked${r.qcAt?" "+daysBetween(r.qcAt,DATA.today)+" d":""}`:r.qc==="Released"?"QC released":"QC: waiting";
+// the cards count shipments (a container or a PO), not item lines: a 17-line container counts once
 const KPIS=[
- {id:"week",l:"Arriving this week",f:r=>!r.sub&&r.eta>=DATA.today&&daysBetween(DATA.today,r.eta)<=6,main:1},
- {id:"rcv",l:"Late at warehouse (not received)",f:r=>late(r)||!!r.unplanned,alert:1,main:1},
- {id:"sap",l:"Arrived 2+ days, not in SAP",f:r=>r.notInSap,alert:1,main:1},
- {id:"iss",l:"Open issues",f:r=>r.issue&&r.issue.status==="Open",alert:1,main:1},
+ {id:"week",l:"Shipments arriving this week",f:r=>!r.sub&&!r.closed&&r.eta>=DATA.today&&daysBetween(DATA.today,r.eta)<=6,main:1,by:"ship"},
+ {id:"rcv",l:"Shipments late at warehouse",f:r=>late(r)||!!r.unplanned,alert:1,main:1,by:"ship"},
+ {id:"sap",l:"Shipments arrived 2+ days, not in SAP",f:r=>r.notInSap,alert:1,main:1,by:"ship"},
+ {id:"iss",l:"POs with an open issue",f:r=>r.issue&&r.issue.status==="Open",alert:1,main:1,by:"po"},
  {id:"over",l:"Issues overdue",f:r=>r.issue&&r.issue.overdue},{id:"dly",l:"Delays reported by 3PL",f:r=>!!r.delay},
- {id:"cases",l:"Missing expected cases",f:r=>!r.sub&&(r.cs===""||r.cs==null)},{id:"dest",l:"No destination",f:r=>!r.wh},
+ {id:"cases",l:"No expected cases yet",f:r=>!r.sub&&!r.closed&&(r.cs===""||r.cs==null)},{id:"closed",l:"Received before the hub",f:r=>!!r.closed},{id:"dest",l:"No destination",f:r=>!r.wh},
  {id:"alloc",l:"No allocation set",f:r=>!r.alloc},{id:"qc",l:"QC locked",f:r=>r.qc==="Locked"}];
 function statusCell(r){let m;const s=r.sub;
- if(r.req)m=`<span class="pill p-warn">Recount asked</span>`;
+ if(r.closed)m=`<span class="pill p-grey">Received before the hub</span>`;
+ else if(r.req)m=`<span class="pill p-warn">Recount asked</span>`;
  else if(s){const dd=r.eta?daysBetween(r.eta,s.recv):0;m=`<span class="pill ${s.damage?"p-dmg":"p-done"}">Arrived ${fds(s.recv)}</span>${dd?`<div class="small">${Math.abs(dd)} d ${dd<0?"early":"late"} vs ETA ${fds(r.eta)}</div>`:""}`}
  else if(r.unplanned)m=`<span class="pill p-dmg">Arrived · not on list</span><div class="small">Reported ${esc(r.unplanned.at)}</div>`;
  else if(r.sla&&["due","nudge","esc","paused"].includes(r.sla.lvl))m=slaPill(r)+(r.delay?`<div class="small">${esc(r.delay.reasonText)}${r.delay.newDate?" · new date "+fds(r.delay.newDate):""}</div>`:`<div class="small">ETA ${fds(r.eta)}</div>`);
@@ -51,14 +55,18 @@ function baseRows(){const q=qRaw.trim().toLowerCase();return DATA.rows.filter(r=
 function weekBoard(rows){const mon=DATA.today,cols=[{k:"late",h:"Late / arrived earlier"}];for(let i=0;i<5;i++){const d=addDays(mon,i);cols.push({k:d,h:fd(d)})}cols.push({k:"next",h:"Later"});
  const colOf=r=>{const d=r.sub?r.sub.recv:(r.clockFrom||r.eta);if(!d)return"next";if(d<mon)return"late";if(d>addDays(mon,4))return"next";return d};
  return `<div class="week">${cols.map(c=>{const it=rows.filter(r=>colOf(r)===c.k);return `<div class="wcol ${c.k===DATA.today?"today":""}"><h4>${esc(c.h)}</h4>${it.length?it.map(r=>`<button type="button" class="wcard ${r.sub?"done":"lvl-"+(r.sla?r.sla.lvl:"none")}" data-open="${esc(r.id)}"><b>${esc(r.po)}</b> · ${esc(r.wh||"?")}<br>${esc(String(r.desc).slice(0,26))}<br><span class="small" style="margin:0">${r.sub?"Arrived "+fds(r.sub.recv):r.unplanned?"Not on list":esc(r.slaText||"")}</span></button>`).join(""):`<div class="small">—</div>`}</div>`}).join("")}</div>`}
+const EXP=new Set(),LV=["esc","nudge","due","paused","tom","up"],rk=r=>r.sla?LV.indexOf(r.sla.lvl):99;
+/** Lines of one shipment collapse to one row (the most urgent) unless the group is opened. */
+function groupRows(rows){const m=new Map();rows.forEach(r=>{if(!m.has(r.ship))m.set(r.ship,[]);m.get(r.ship).push(r)});const out=[];
+ m.forEach((ls,k)=>{const open=EXP.has(k)||!!qRaw.trim();const sorted=ls.slice().sort((a,b)=>rk(a)-rk(b));(open?sorted:[sorted[0]]).forEach((r,i)=>out.push({r,n:i===0?ls.length:1,open}))});return out}
 function render(){
  const base=baseRows(),kf=KPIS.find(k=>k.id===kpiF),rows=base.filter(r=>!kf||kf.f(r));
  $("main").innerHTML=`${welcome?`<div class="welcome"><div style="display:flex;justify-content:space-between;gap:10px"><h3>PO Hub pilot</h3><button type="button" class="btn ghost" id="wx" style="min-height:34px;padding:4px 10px">Hide</button></div>
-  <div style="font-size:13.5px">Every PO from the upcoming sheet, with the 3PL receiving, photos, counts and issues in one place. Click a PO number to see everything. POs imported from the sheet need <b>expected cases</b> before the 3PL can receive them (filter "Missing expected cases").</div></div>`:""}
+  <div style="font-size:13.5px">Every PO from the upcoming sheet, with the 3PL receiving, photos, counts and issues in one place. Click a PO number to see everything. Lines of the same container are grouped: click "items" to open them. The Upcoming sheet has no cases, so the 3PL count is only compared on pallets until you add <b>expected cases</b> (open a PO, then "Expected cases for all lines"). Shipments that arrived before the hub: open them and click <b>Received before the hub</b>.</div></div>`:""}
  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><h2 style="margin:0" tabindex="-1">All POs <span class="ichip">Internal only</span></h2>
   <div style="display:flex;gap:8px;flex-wrap:wrap"><div class="view"><button type="button" data-v="table" aria-pressed="${view==="table"}" class="${view==="table"?"on":""}">Table</button><button type="button" data-v="week" aria-pressed="${view==="week"}" class="${view==="week"?"on":""}">This week</button></div>
   <button type="button" class="btn ghost" id="refresh">↻ Refresh</button><button type="button" class="btn" id="addpo">＋ Add upcoming PO</button></div></div>
- <div class="kpis">${KPIS.filter(k=>k.main).map(k=>{const n=base.filter(k.f).length;return `<button type="button" class="kpi ${kpiF===k.id?"on":""} ${k.alert&&n?"alert":""}" data-k="${k.id}" aria-pressed="${kpiF===k.id}"><div class="n">${n}</div><div class="l">${k.l}</div></button>`}).join("")}</div>
+ <div class="kpis">${KPIS.filter(k=>k.main).map(k=>{const n=new Set(base.filter(k.f).map(r=>k.by==="po"?r.po:r.ship)).size;return `<button type="button" class="kpi ${kpiF===k.id?"on":""} ${k.alert&&n?"alert":""}" data-k="${k.id}" aria-pressed="${kpiF===k.id}"><div class="n">${n}</div><div class="l">${k.l}</div></button>`}).join("")}</div>
  <div class="bar"><label for="q" class="sr">Search</label><input id="q" type="search" placeholder="Search PO, item, product, supplier, lot, container or sales order…" value="${esc(qRaw)}">
   <div class="chips">${["",...WHS].map(w=>`<button type="button" data-w="${w}" class="${whF===w?"on":""}" aria-pressed="${whF===w}">${w||"All"}${w?`<small>${isTPL(w)?"3PL":"Tootsi"}</small>`:""}</button>`).join("")}</div>
   <select id="more" aria-label="More filters"><option value="">More filters…</option>${KPIS.filter(k=>!k.main).map(k=>`<option value="${k.id}" ${kpiF===k.id?"selected":""}>${k.l} (${base.filter(k.f).length})</option>`).join("")}</select>
@@ -66,7 +74,7 @@ function render(){
   ${kpiF||whF||ownF||qRaw?`<button type="button" class="btn ghost" id="clr">Clear filters</button>`:""}</div>
  <details class="legend"><summary>What do the colors mean?</summary><div><span class="sla sla-up">⚪ Upcoming</span><span class="sla sla-due">🟡 Expected today</span><span class="sla sla-nudge">🟠 1 business day late: nudge</span><span class="sla sla-esc">🔴 2+ business days late: escalated</span><span class="sla sla-paused">⏸ Delay reported by 3PL</span><span>Business hours Mon–Fri 8:00–17:00.</span></div></details>
  ${view==="week"?weekBoard(rows):`<div class="tw"><table><caption class="sr">Purchase orders</caption><thead><tr><th scope="col">Needs action</th><th scope="col">PO</th><th scope="col">Dest.</th><th scope="col">Item</th><th scope="col">Status</th><th scope="col">Who it's for</th><th scope="col">Qty check</th></tr></thead><tbody>
- ${rows.length?rows.map(r=>`<tr data-po="${esc(r.id)}" class="lvl-${r.sla?r.sla.lvl:"none"}">
+ ${rows.length?groupRows(rows).map(({r,n,open})=>`${n>1?`<tr class="grp"><td colspan="7"><button type="button" class="grpbtn" data-grp="${esc(r.ship)}" aria-expanded="${open}">${open?"▾":"▸"} ${r.cntr?"Container "+esc(r.cntr):"PO "+esc(r.po)} · <b>${n} items</b> ${open?"":"(showing the most urgent)"}</button></td></tr>`:""}<tr data-po="${esc(r.id)}" class="lvl-${r.sla?r.sla.lvl:"none"}">
   <td data-l="Needs action" class="wide ${r.needs.length?"":"nona"}">${r.needs.length?r.needs.map(a=>`<div class="need ${a.u?"u":""}">${esc(a.t)}</div>`).join(""):`<span class="small">—</span>`}</td>
   <td data-l="PO"><button type="button" class="pobtn" data-open="${esc(r.id)}">${esc(r.po)}</button>${r.source==="manual"?`<div><span class="pill a-prod" style="margin-top:4px">Manual</span></div>`:""}</td>
   <td data-l="Dest."><b>${esc(r.wh||"—")}</b><div class="small" style="margin:0">${r.wh?(isTPL(r.wh)?"3PL":"Tootsi"):"not set"}</div></td>
@@ -75,6 +83,7 @@ function render(){
   <td data-l="Who it's for">${r.unplanned?"—":allocPill(r)}${r.so?`<div class="small">${esc(r.so)}</div>`:""}</td>
   <td data-l="Qty check"><span class="pill ${r.qty.cls}">${esc(r.qty.t)}</span>${r.qty.sub?`<div class="small">${esc(r.qty.sub)}</div>`:""}</td></tr>`).join(""):`<tr><td colspan="7"><div class="empty" style="border:none">No POs match these filters.</div></td></tr>`}</tbody></table></div>`}`;
  $("rc").textContent=rows.length+" POs shown";
+ document.querySelectorAll("[data-grp]").forEach(b=>b.onclick=()=>{const k=b.dataset.grp;EXP.has(k)?EXP.delete(k):EXP.add(k);render()});
  document.querySelectorAll("tr[data-po]").forEach(tr=>tr.onclick=e=>{if(e.target.closest("[data-open]"))return;openPO(tr.dataset.po)});
  document.querySelectorAll("[data-open]").forEach(b=>b.onclick=e=>{e.stopPropagation();openPO(b.dataset.open)});
  document.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{whF=b.dataset.w;render()});
@@ -87,7 +96,7 @@ function render(){
 }
 
 // ---------- PO page ----------
-async function act(id,action,d,msg){busy(true);try{await call("hubAction",id,action,d||{});await load();if(id)await openPO(id,true);if(msg)toast(msg)}catch(e){toast(e.message);const er=$("d_err");if(er)er.textContent=e.message}busy(false)}
+async function act(id,action,d,msg){busy(true);try{await call("hubAction",id,action,d||{});await Promise.all([load(),id?openPO(id,true):null]);if(msg)toast(msg)}catch(e){toast(e.message);const er=$("d_err");if(er)er.textContent=e.message}busy(false)}
 async function openPO(id,keepScroll){openId=id;const y=keepScroll&&$("drawer").classList.contains("open")?$("drawer").scrollTop:0;let r;
  try{r=await call("hubDetailLoad",id)}catch(e){toast(e.message);return}
  const s=r.sub,is=r.issue,tp=isTPL(r.wh),c=r.counts;
@@ -112,6 +121,13 @@ async function openPO(id,keepScroll){openId=id;const y=keepScroll&&$("drawer").c
    ${(s&&s.damage)||is.decision?`<div class="row r2" style="margin-top:10px"><div><label for="is_dec">Dock decision</label><select class="in" id="is_dec">${DECISIONS.map(o=>`<option ${o===(is.decision||"Pending")?"selected":""}>${o}</option>`).join("")}</select></div><div><label for="is_decn">Reason</label><input class="in" id="is_decn" value="${esc(is.decisionNote||"")}"></div></div>`:""}
    ${r.claim?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${s&&tp&&!r.req?`<button type="button" class="btn ghost" id="askre">↻ Ask ${esc(r.wh)} for another count (${c.length} of 3)</button>`:""}<button type="button" class="btn ghost" id="claim">📋 Build claim package (NCR)</button></div>`:""}
    <div id="askbox"></div><div id="claimbox"></div></div></div>`:""}
+  ${r.lines&&r.lines.length?`<div class="sec"><h3>${r.cntr?"Container "+esc(r.cntr):"Shipment"} · ${r.lines.length} item${r.lines.length>1?"s":""}${r.shipPlt!=null?" · "+fmt(r.shipPlt)+" pallets":""}</h3><div class="card" style="padding:6px 10px">
+   ${r.lines.map(x=>`<div style="display:flex;gap:8px;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f3f0;font-size:13px"><span>${x.id===r.id?"▸ ":""}<b class="mono">${esc(x.po)} / ${esc(x.item)}</b> ${esc(x.desc)}</span><span class="small" style="margin:0;white-space:nowrap">${x.sub?fmt(x.sub.cs)+" cs received":x.done?"Before the hub":(x.cs===""||x.cs==null?"no expected cs":fmt(x.cs)+" cs expected")}</span></div>`).join("")}
+   ${r.lines.some(x=>!x.done)?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button type="button" class="btn ghost" id="prehub">Received before the hub</button><span class="small" style="align-self:center">Use this if the shipment arrived before the pilot started. It stops the late alerts.</span></div><div id="phbox"></div>`:""}
+   ${r.closed?`<button type="button" class="btn ghost" id="reopen" style="margin-top:8px">Reopen this line (receiving expected)</button>`:""}</div>
+   <details class="sec" ${r.lines.some(x=>!x.done&&(x.cs===""||x.cs==null))?"open":""}><summary>Expected cases for all lines of PO ${esc(r.po)}</summary>
+    ${r.lines.filter(x=>x.po===r.po&&!x.done).map(x=>`<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><label for="bc_${esc(x.id)}" style="flex:1;margin:0;font-size:13px"><b class="mono">${esc(x.item)}</b> ${esc(x.desc)}</label><input class="in" style="max-width:120px" type="number" min="0" id="bc_${esc(x.id)}" data-bc="${esc(x.id)}" value="${esc(x.cs)}"></div>`).join("")}
+    <button type="button" class="btn ghost" id="bc_save" style="margin-top:8px">Save expected cases</button></details></div>`:""}
   ${r.unplanned?"":`<div class="sec"><h3>Who it's for</h3><div class="card">
    <div class="chips" role="group" aria-label="Allocation">${["Production","Sales","Split",""].map(a=>`<button type="button" data-a="${a}" aria-pressed="${r.alloc===a}" class="${r.alloc===a?"on":""}">${a||"Not set"}</button>`).join("")}</div>
    <div id="splitbox" style="${r.alloc==="Split"?"":"display:none"}"><div class="row r2" style="margin-top:10px"><div><label for="a_prod">Cases for production</label><input class="in" type="number" min="0" id="a_prod" value="${esc(r.prodQty)}"></div><div><label for="a_sales">Cases for sales</label><input class="in" type="number" min="0" id="a_sales" value="${esc(r.salesQty)}"></div></div><div class="small">Must add up to ${fmt(r.cs)} cs.</div></div>
@@ -129,7 +145,7 @@ async function openPO(id,keepScroll){openId=id;const y=keepScroll&&$("drawer").c
     <div class="row r2" style="margin-top:6px"><div><label for="e_wh">Destination</label><select class="in" id="e_wh"><option value="">Not set</option>${WHS.map(w=>`<option ${w===r.wh?"selected":""}>${w}</option>`).join("")}</select></div><div><label for="e_eta">Expected date</label><input class="in" type="date" id="e_eta" value="${esc(r.eta)}"></div></div>
     <button type="button" class="btn ghost" id="e_save" style="margin-top:8px">Save expected data</button></details>
    <details class="sec"><summary>Enter supplier quantities (packing list / loading report)</summary>${["pl","lr"].map(k=>{const o=r[k];return `<div style="margin-top:6px"><b style="font-size:13px">${k==="pl"?"Packing list":"Loading report"}</b><div class="row r3" style="margin-top:6px"><div><label for="${k}_plt">Pallets</label><input class="in" type="number" min="0" id="${k}_plt" value="${o?esc(o.plt):""}"></div><div><label for="${k}_cs">Cases</label><input class="in" type="number" min="0" id="${k}_cs" value="${o?esc(o.cs):""}"></div><div><label for="${k}_lbs">Net lb</label><input class="in" type="number" min="0" id="${k}_lbs" value="${o?esc(o.lbs):""}"></div></div><button type="button" class="btn ghost" data-saveq="${k}" style="margin-top:8px">Save</button></div>`}).join("")}</details>
-   ${!tp&&!s&&r.wh&&r.cs!==""&&r.cs!=null?`<button type="button" class="btn" id="recvown" style="width:100%;margin-top:12px">Record receiving at ${esc(r.wh)}</button>`:""}</div>
+   ${!tp&&!s&&!r.closed&&r.wh&&!r.unplanned?`<button type="button" class="btn" id="recvown" style="width:100%;margin-top:12px">Record receiving at ${esc(r.wh)}${r.lines&&r.lines.filter(x=>!x.done).length>1?" ("+r.lines.filter(x=>!x.done).length+" items)":""}</button>`:""}</div>
   <div class="sec"><h3>Timeline</h3><ul class="timeline">${r.timeline.map((z,i)=>`<li><span class="dot ${z.done?"done":z.bad?"bad":""}" aria-hidden="true"></span><span>${esc(z.t)}</span><span class="when" style="${z.bad?"color:#b0182f":""}">${esc(z.when)}</span></li>`).join("")}</ul>
    ${s&&!r.sap?`<button type="button" class="btn ghost" id="sapbtn" style="margin-top:8px">Mark as entered in SAP / WMS</button>`:""}</div>
   <details class="sec" ${r.files.length?"open":""}><summary>Receiving files (${r.files.length})</summary>
@@ -157,7 +173,10 @@ async function openPO(id,keepScroll){openId=id;const y=keepScroll&&$("drawer").c
   const dec=$("is_dec");if(dec)dec.onchange=()=>act(id,"issue",{decision:v("is_dec"),decisionNote:v("is_decn")});
   const a=$("askre");if(a)a.onclick=()=>{$("askbox").innerHTML=`<div class="confirm">Ask ${esc(r.wh)} to count PO ${esc(r.po)} again? Their current count, photos and documents stay on file.<div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="btn" id="askyes">Yes, ask ${esc(r.wh)}</button><button type="button" class="btn ghost" id="askno">Cancel</button></div></div>`;$("askyes").focus();$("askno").onclick=()=>{$("askbox").innerHTML=""};$("askyes").onclick=()=>act(id,"recount",{},r.wh+" will see the recount request.")};
   const cl=$("claim");if(cl)cl.onclick=()=>{$("claimbox").innerHTML=`<textarea id="ct" rows="16" style="margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:12px" aria-label="Claim summary">${esc(r.claim)}</textarea><button type="button" class="btn" id="cc" style="margin-top:8px">Copy for email to supplier</button>`;$("cc").onclick=async()=>{try{await navigator.clipboard.writeText($("ct").value);toast("Copied.")}catch(e){$("ct").select();toast("Select all and copy (Ctrl+C).")}}};}
- const ro=$("recvown");if(ro)ro.onclick=()=>openReceive({id:r.id,po:r.po,item:r.item,desc:r.desc,eta:r.eta,cntr:r.cntr,plt:r.plt,load:r.load,floor:r.floor,instr:"",req:false});
+ const ro=$("recvown");if(ro)ro.onclick=()=>{HUBLINES=r.lines.filter(x=>!x.done).map(x=>({id:x.id,po:x.po,item:x.item,desc:x.desc}));openReceive({id:r.id,po:r.po,item:r.item,desc:r.desc,eta:r.eta,cntr:r.cntr,plt:r.plt,load:r.load,floor:r.floor,instr:"",req:false,shipPlt:r.shipPlt,askP:r.askP})};
+ const ph=$("prehub");if(ph)ph.onclick=()=>{$("phbox").innerHTML=`<div class="confirm">Mark the ${r.lines.filter(x=>!x.done).length} open line(s) of this shipment as received before the hub? The 3PL will no longer see them.<div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="btn" id="phyes">Yes, mark as received</button><button type="button" class="btn ghost" id="phno">Cancel</button></div></div>`;$("phyes").focus();$("phno").onclick=()=>{$("phbox").innerHTML=""};$("phyes").onclick=()=>act(id,"prehub",{},"Marked as received before the hub.")};
+ const rop=$("reopen");if(rop)rop.onclick=()=>act(id,"reopen",{},"Reopened.");
+ const bcs=$("bc_save");if(bcs)bcs.onclick=()=>{const d={};document.querySelectorAll("[data-bc]").forEach(i=>{if(i.value!=="")d[i.dataset.bc]=i.value});act(id,"expectedBulk",{cs:d},"Expected cases saved.")};
 }
 
 // ---------- add PO ----------

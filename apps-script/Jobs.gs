@@ -8,7 +8,11 @@
  * dailyJob(): 7:40 every morning: recompute issues, remind 3PLs about late POs (if EMAIL_3PL = yes),
  *   and email a short digest to DIGEST_TO.
  */
-function importUpcoming() {
+function importUpcoming(e) {
+  requireOwner_(e);
+  return importUpcoming_();
+}
+function importUpcoming_() {
   var cfg = config_(); if (!cfg.UPCOMING_SHEET_ID) return 0;
   var src = SpreadsheetApp.openById(cfg.UPCOMING_SHEET_ID);
   var sh = src.getSheetByName(cfg.UPCOMING_TAB || 'UPCOMING FTL FCL');
@@ -20,34 +24,58 @@ function importUpcoming() {
   var col = function (name) { return h.indexOf(name.toLowerCase()); };
   var c = { po: col('PO#'), ven: col('Vendor Name'), skid: col('#Skid'), size: col('Ship Size'), csize: col('CSize'), pltzd: col('PLTZD'), cntr: col('CNTR/TrackNum'), whs: col('WHS'), eta: col('ETA Destination'), item: col('Item No.'), desc: col('Item Description'), wt: col('Line Weight') };
   if (c.po < 0 || c.item < 0) throw new Error('Could not find the PO# / Item No. columns in the upcoming sheet.');
-  var have = {}; readAll('POs').forEach(function (p) { have[p.id] = true; });
-  var stamp = nowStamp_(), n = 0;
+  var lines = [];
   for (var i = 1; i < v.length; i++) {
     var r = v[i], po = String(r[c.po]).trim(), item = String(r[c.item]).trim();
     if (!po || !item) continue;
-    var id = po + '|' + item; if (have[id]) continue;
-    var eta = r[c.eta] instanceof Date ? Utilities.formatDate(r[c.eta], srcTz, 'yyyy-MM-dd') : String(r[c.eta]).slice(0, 10);
+    var eta = r[c.eta] instanceof Date ? Utilities.formatDate(r[c.eta], srcTz, 'yyyy-MM-dd') : (/^\d{4}-\d{2}-\d{2}/.test(String(r[c.eta])) ? String(r[c.eta]).slice(0, 10) : '');
     var whs = String(r[c.whs] || '').trim().toUpperCase();
     var size = String(r[c.size] || '').trim(), csize = String(r[c.csize] || '').trim(), pal = String(r[c.pltzd] || '').trim() === '1';
     var load = (size === 'FCL' ? 'FCL ' + (csize && csize !== '-' ? csize : '') : size) + ' · ' + (size === 'FCL' && !pal ? 'Floor loaded' : 'Palletized');
-    append('POs', { id: id, po: po, item: item, wh: (['TP', 'DL', 'BM', 'LY', 'HB'].indexOf(whs) >= 0 ? whs : ''), desc: String(r[c.desc]).trim(), supplier: String(r[c.ven]).trim(), eta: eta,
-      cntr: String(r[c.cntr] || '').trim(), plt: num(r[c.skid]), cs: '', lbs: num(r[c.wt]), load: load.trim(), qc: 'Not received', source: 'sheet', addedBy: 'Import', updatedAt: stamp });
-    have[id] = true; n++;
+    lines.push({ id: po + '|' + item, po: po, item: item, wh: (TPL_WH.concat(OWN_WH).indexOf(whs) >= 0 ? whs : ''), desc: String(r[c.desc]).trim(), supplier: String(r[c.ven]).trim(), eta: eta,
+      cntr: String(r[c.cntr] || '').trim().toUpperCase(), plt: num(r[c.skid]), lbs: num(r[c.wt]), load: load.replace(/\s+/g, ' ').trim() });
   }
-  // fill the destination later when Camilla's sheet decides it (only if still empty)
-  readAll('POs').forEach(function (p) {
-    if (p.wh || p.source !== 'sheet') return;
-    for (var j = 1; j < v.length; j++) { var r2 = v[j]; if (String(r2[c.po]).trim() + '|' + String(r2[c.item]).trim() === p.id) { var w = String(r2[c.whs] || '').trim().toUpperCase(); if (['TP', 'DL', 'BM', 'LY', 'HB'].indexOf(w) >= 0) { p.wh = w; p.updatedAt = stamp; upsert('POs', 'id', p); } break; } }
+  return withLock_(function () {
+    var ctx = ctx_(), st = loadState_(), have = {}, added = 0, changed = 0;
+    st.pos.forEach(function (p) { have[p.id] = p; });
+    lines.forEach(function (L) {
+      var p = have[L.id];
+      if (!p) {
+        L.cs = ''; L.qc = 'Not received'; L.source = 'sheet'; L.addedBy = 'Import'; L.updatedAt = ctx.stamp;
+        if (L.plt == null) L.plt = ''; if (L.lbs == null) L.lbs = '';
+        append_('POs', L); have[L.id] = L; added++; return;
+      }
+      // keep the hub in step with the sheet: ETA, destination, container, pallets, weight, load type
+      // never after receiving, and never for a field someone changed by hand in the hub
+      if (p.source !== 'sheet' || st.sub[p.id] || p.closed) return;
+      var manual = String(p.manual || '').split(','), diff = [];
+      ['eta', 'wh', 'cntr', 'plt', 'lbs', 'load'].forEach(function (k) {
+        var nv = L[k] == null ? '' : L[k], ov = p[k] == null ? '' : p[k];
+        if (manual.indexOf(k) >= 0 || nv === '' || String(nv) === String(ov)) return;
+        diff.push(k + ' ' + (ov === '' ? '(blank)' : ov) + ' → ' + nv); p[k] = nv;
+      });
+      if (diff.length) { savePO_(p, ctx); note_(p.id, 'Upcoming sheet', 'Updated from the Upcoming sheet: ' + diff.join(', '), ctx); changed++; }
+    });
+    if (added || changed) logAction_('Import', 'importUpcoming', '', added + ' new PO lines, ' + changed + ' updated');
+    return added;
   });
-  if (n) logAction_('Import', 'importUpcoming', '', n + ' new PO lines');
-  return n;
 }
 
-function dailyJob() {
-  try { importUpcoming(); } catch (e) { logAction_('Import', 'error', '', e.message); }
-  var ctx = ctx_(), st = sync_(loadState_(), ctx), cfg = ctx.cfg;
-  var late = st.pos.filter(function (p) { return isLate(p, st, ctx); });
-  late.forEach(function (p) { if (isTPL(p.wh) && p.nudged !== ctx.today && sla(p, st, ctx).lvl === 'nudge') { p.nudged = ctx.today; savePO_(p, ctx); notify3pl_(p, 'nudge', ctx); } });
+function dailyJob(e) {
+  requireOwner_(e);
+  try { importUpcoming_(); } catch (e) { logAction_('Import', 'error', '', e.message); }
+  var ctx = ctx_(), cfg = ctx.cfg, st, late;
+  withLock_(function () {
+    st = sync_(loadState_(), ctx);
+    late = st.pos.filter(function (p) { return isLate(p, st, ctx); });
+    // one reminder per shipment (container or PO), not one per item line
+    var sent = {};
+    late.forEach(function (p) {
+      if (!isTPL(p.wh) || p.nudged === ctx.today || sla(p, st, ctx).lvl !== 'nudge') return;
+      var k = shipKey(p); p.nudged = ctx.today; savePO_(p, ctx);
+      if (!sent[k]) { sent[k] = true; notify3pl_(p, 'nudge', ctx); }
+    });
+  });
   var open = st.pos.filter(function (p) { return openIssue(p, st); });
   var sap = st.pos.filter(function (p) { return notInSap(p, st, ctx); });
   if (!cfg.DIGEST_TO || String(cfg.EMAIL_ON || 'no') !== 'yes') return;
