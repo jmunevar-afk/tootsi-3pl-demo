@@ -25,7 +25,7 @@ def bar(active):
     a = "".join(f'<a href="{h}" style="color:{"#fff" if h==active else "#c9cbcd"};{"font-weight:600;text-decoration:underline" if h==active else ""};margin-right:14px">{t}</a>' for h, t in links)
     return ('<div style="background:#16181a;color:#e9e9e6;padding:8px 20px;font:13px IBM Plex Sans,system-ui;display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
             '<b style="color:#fff;margin-right:10px">Google Workspace version · preview</b>' + a +
-            '<button onclick="localStorage.removeItem(\'pohub_gws_preview_v3\');localStorage.removeItem(\'tootsi_3pl_session\');location.reload()" style="margin-left:auto;background:none;border:1px solid #555;color:#e9e9e6;border-radius:16px;padding:4px 12px;cursor:pointer">Reset sample data</button></div>')
+            '<button onclick="localStorage.removeItem(\'pohub_gws_preview_v4\');localStorage.removeItem(\'tootsi_3pl_session\');location.reload()" style="margin-left:auto;background:none;border:1px solid #555;color:#e9e9e6;border-radius:16px;padding:4px 12px;cursor:pointer">Reset sample data</button></div>')
 
 def inject(html, active, user):
     # The server code runs in its own hidden frame, like Apps Script runs on Google's servers.

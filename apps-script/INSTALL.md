@@ -1,5 +1,7 @@
 # PO Hub · Google Workspace version · install guide
 
+> **v5 adds:** hourly sync (Upcoming sheet, packing slip log, master sheet) — run `installTriggers` once after updating. New Config keys: `SLIP_LOG_ID`, `SLIP_TAB`, `SLIP_TO_3PL`, `MASTER_SHEET_ID`, `MASTER_TAB`, `MASTER_MODE` (preview / on / off), `COMPARE_LB`.
+>
 > **Updating an existing install (v4 or later):** paste the new `PO_Hub_one_file.gs` over everything in `Code.gs`, Save, run `setup` once (it adds new columns and tabs without touching data), then Deploy › Manage deployments › edit each deployment › Version: New version › Deploy.
 
 

@@ -43,7 +43,7 @@ function bizHours(startDate, ctx) {
 
 /** Index the raw tables so lookups by PO id are fast. */
 function indexState(raw) {
-  var st = { pos: raw.pos, sub: {}, hist: {}, issue: {}, notes: {}, delay: {}, delayLog: {}, req: {}, docs: {}, pl: {}, lr: {} };
+  var st = { slip: {}, mseen: {}, pos: raw.pos, sub: {}, hist: {}, issue: {}, notes: {}, delay: {}, delayLog: {}, req: {}, docs: {}, pl: {}, lr: {} };
   raw.subs.slice().sort(function (a, b) { return a.seq - b.seq; }).forEach(function (s) {
     if (s.superseded === true || s.superseded === 'TRUE') (st.hist[s.id] = st.hist[s.id] || []).push(s); else st.sub[s.id] = s;
   });
@@ -52,6 +52,8 @@ function indexState(raw) {
   raw.delays.forEach(function (d) { if (d.closedAt) (st.delayLog[d.id] = st.delayLog[d.id] || []).push(d); else st.delay[d.id] = d; });
   raw.recounts.forEach(function (r) { if (r.active === true || r.active === 'TRUE') st.req[r.id] = r; });
   raw.docs.forEach(function (d) { (st.docs[d.id] = st.docs[d.id] || []).push(d); });
+  (raw.slips || []).forEach(function (s) { st.slip[s.po] = s; });
+  (raw.mseen || []).forEach(function (m) { st.mseen[m.id] = m; });
   raw.supq.forEach(function (q) { if (q.kind === 'pl') st.pl[q.id] = q; else st.lr[q.id] = q; });
   return st;
 }
@@ -62,7 +64,8 @@ function diffs(p, got, ctx) {
   var ep = got.grpPlt !== undefined && got.grpPlt !== '' && got.grpPlt != null ? num(got.grpPlt) : num(p.plt), ec = num(p.cs), el = num(p.lbs), gp = num(got.plt), gc = num(got.cs), gl = num(got.lbs);
   if (!isFloor(p) && ep != null && gp != null && gp !== ep) d.push('pallets');
   if (ec != null && gc != null && gc !== ec) d.push('cases');
-  if (el && gl != null && Math.abs(gl - el) / el > tol) d.push('lbs');
+  // the Upcoming sheet "Line Weight" may be gross: compare lb only when COMPARE_LB = yes
+  if (String(ctx.cfg.COMPARE_LB || 'no') === 'yes' && el && gl != null && Math.abs(gl - el) / el > tol) d.push('lbs');
   return d;
 }
 
@@ -72,7 +75,7 @@ function gapText(p, got, ctx) {
   var ep = got.grpPlt !== undefined && got.grpPlt !== '' && got.grpPlt != null ? num(got.grpPlt) : num(p.plt), ec = num(p.cs), el = num(p.lbs), gp = num(got.plt), gc = num(got.cs), gl = num(got.lbs);
   if (ec != null && gc != null && gc !== ec) parts.push((gc < ec ? 'Short ' : 'Over ') + fmtN(Math.abs(gc - ec)) + ' cs');
   if (!isFloor(p) && ep != null && gp != null && gp !== ep) parts.push((gp < ep ? 'short ' : 'over ') + Math.abs(gp - ep) + ' plt');
-  if (el && gl != null && Math.abs(gl - el) / el > tol) parts.push((gl < el ? 'light ' : 'heavy ') + fmtN(Math.abs(gl - el)) + ' lb');
+  if (String(ctx.cfg.COMPARE_LB || 'no') === 'yes' && el && gl != null && Math.abs(gl - el) / el > tol) parts.push((gl < el ? 'light ' : 'heavy ') + fmtN(Math.abs(gl - el)) + ' lb');
   var s = parts.join(', '); return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
@@ -81,7 +84,7 @@ function sla(p, st, ctx) {
   if (isDone(p, st)) return null;
   if (!p.wh) return null;
   if (st.delay[p.id]) return { lvl: 'paused', h: 0 };
-  var from = st.req[p.id] ? st.req[p.id].from : (p.clockFrom || p.eta);
+  var from = st.req[p.id] ? st.req[p.id].from : (p.clockFrom && (!p.eta || p.clockFrom > p.eta) ? p.clockFrom : p.eta);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(from || ''))) return null;
   // lines that were due before the hub went live start their clock on the go-live day
   var live = String(ctx.cfg.GO_LIVE || '');
@@ -101,6 +104,7 @@ function issueState(p, st, ctx) {
   if (unpl) { types.push('Arrived at ' + p.wh + ', not on the upcoming list'); owner = 'Logistics'; urgent = true; opened = p.eta; }
   if (pl && !s && diffs(p, pl, ctx).length) types.push('Packing list ≠ PO (' + gapText(p, pl, ctx) + ')');
   if (s && diffs(p, s, ctx).length) types.push(gapText(p, s, ctx));
+  else if (s && num(s.cs) === 0 && num(p.cs) == null) types.push('Item did not arrive (0 cs counted)');
   var hist = st.hist[p.id] || [];
   if ((s && s.damage) || hist.some(function (h) { return h.damage; })) { types.push('damage'); urgent = true; }
   var dl = st.delay[p.id];
@@ -183,6 +187,9 @@ function needsAction(p, st, ctx) {
   if (is && issueOverdue(is, ctx)) a.push({ t: 'Overdue: ' + is.owner, u: true });
   else if (is && !dl && !(sl && (sl.lvl === 'nudge' || sl.lvl === 'esc')) && !(p.unplannedJson && !truthy(p.planOk))) a.push({ t: 'Issue · ' + is.owner });
   if (notInSap(p, st, ctx)) a.push({ t: 'Enter in SAP' });
+  if (!s && st.mseen[p.id]) a.push({ t: 'Master sheet shows received ' + st.mseen[p.id].recv + ' · confirm', u: true });
+  var sl = st.slip[p.po];
+  if (!s && (!sl || sl.status !== 'FOUND') && p.eta && daysBetween(ctx.today, p.eta) <= 7 && !p.unplannedJson) a.push({ t: 'Packing slip missing' });
   if (!s && p.wh && num(p.cs) == null && !p.unplannedJson) a.push({ t: 'Add expected cases (not compared yet)' });
   if (!p.alloc && !p.unplannedJson && p.eta && daysBetween(ctx.today, p.eta) <= 3) a.push({ t: 'Set allocation' });
   return a.sort(function (x, y) { return (y.u ? 1 : 0) - (x.u ? 1 : 0); });
@@ -192,6 +199,8 @@ function qtyStatus(p, st, ctx) {
   if (p.closed) return { cls: 'p-grey', t: 'Received before the hub', sub: String(p.closed) };
   var s = st.sub[p.id], pl = st.pl[p.id];
   if (s && diffs(p, s, ctx).length) return { cls: 'p-dmg', t: gapText(p, s, ctx) };
+  if (s && num(s.cs) === 0 && num(p.cs) == null) return { cls: 'p-dmg', t: 'Did not arrive (0 cs)' };
+  if (s && num(p.cs) == null) return { cls: 'p-grey', t: 'Received · cases not compared', sub: 'No expected cases on the PO line' };
   if (s) return { cls: 'p-done', t: 'Matches PO', sub: pl && diffs(p, pl, ctx).length ? 'Packing list differed' : '' };
   if (pl && diffs(p, pl, ctx).length) return { cls: 'p-dmg', t: 'Packing list ≠ PO' };
   if (pl) return { cls: 'p-done', t: 'Packing list OK' };
@@ -214,7 +223,7 @@ function timeline(p, st, ctx) {
   var dd = s && p.eta ? daysBetween(p.eta, s.recv) : 0;
   var steps = [
     ['On the upcoming list', unpl ? 'No: arrived without notice' : (p.source === 'manual' ? 'Added by ' + p.addedBy : 'From the shipment sheet'), !unpl, unpl],
-    ['Packing list received', pl ? 'Entered by ' + pl.by : '', !!pl, false],
+    ['Packing list received', pl ? 'Entered by ' + pl.by : (st.slip[p.po] && st.slip[p.po].status === 'FOUND' ? 'Packing slip on file' : ''), !!pl || !!(st.slip[p.po] && st.slip[p.po].status === 'FOUND'), false],
     ['Arrived at ' + (p.wh || '?'), p.closed ? 'Before the hub (' + p.closed + ')' : s ? s.recv + (dd ? ' (' + Math.abs(dd) + ' d ' + (dd < 0 ? 'early' : 'late') + ')' : '') : st.delay[p.id] ? 'Delay: ' + REASON_EN[st.delay[p.id].reason] : unpl ? 'Reported ' + p.unplannedJson.at : (p.eta ? 'ETA ' + p.eta : ''), !!s || unpl || !!p.closed, late],
     ['Counted and documented', s ? s.by : '', !!s, false],
     ['Quantity verified', s ? (diffs(p, s, ctx).length ? gapText(p, s, ctx) : 'Matches PO') : '', !!s && !diffs(p, s, ctx).length, !!s && diffs(p, s, ctx).length > 0],
@@ -256,6 +265,8 @@ function hubRow(p, st, ctx) {
     issue: is ? { type: is.type, owner: is.owner, status: is.status, opened: is.opened, urgent: truthy(is.urgent), decision: is.decision, decisionNote: is.decisionNote, overdue: issueOverdue(is, ctx) } : null,
     needs: needsAction(p, st, ctx), qty: qtyStatus(p, st, ctx), avail: availSales(p, st, ctx), notInSap: notInSap(p, st, ctx),
     pl: st.pl[p.id] || null, lr: st.lr[p.id] || null,
+    slip: st.slip[p.po] ? { status: st.slip[p.po].status, url: st.slip[p.po].url, source: st.slip[p.po].source, action: st.slip[p.po].action, has: !!st.slip[p.po].fileId } : null,
+    masterRecv: st.mseen[p.id] ? st.mseen[p.id].recv : '',
     closed: p.closed || '', ship: shipKey(p), shipN: shipLines(p, st).length, manual: p.manual || ''
   };
 }
@@ -280,7 +291,7 @@ function portalRow(p, st, ctx) {
   var s = st.sub[p.id], sl = sla(p, st, ctx), dl = st.delay[p.id];
   return {
     id: p.id, ship: shipKey(p), askP: shipFresh(p, st), shipPlt: shipPallets(shipLines(p, st)), po: p.po, item: p.item, desc: p.desc, eta: p.eta, cntr: p.cntr, plt: p.plt, load: p.load, floor: isFloor(p), instr: p.tplInstr || '',
-    sla: sl ? { lvl: sl.lvl } : null, req: !!st.req[p.id],
+    sla: sl ? { lvl: sl.lvl } : null, req: !!st.req[p.id], slip: !!(st.slip[p.po] && st.slip[p.po].status === 'FOUND' && st.slip[p.po].fileId && String(ctx.cfg.SLIP_TO_3PL || 'yes') === 'yes'),
     delay: dl ? { reason: dl.reason, newDate: dl.newDate } : null,
     sent: s ? { recv: s.recv, at: s.at, plt: s.plt, cs: s.cs, lbs: s.lbs, first: s.firstJson, diffNote: s.diffNote, lot: s.lot, exp: s.exp, cond: s.cond, damage: truthy(s.damage), dmgText: s.dmgText, comment: s.comment,
       files: (s.filesJson || []).map(function (f) { return { cat: f.cat, name: f.name }; }) } : null

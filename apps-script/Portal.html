@@ -19,6 +19,7 @@
 <script>
 let TOKEN=null,WH="",NAME="";const HUB_URL=<?!= JSON.stringify(hubUrl) ?>;
 let lang=<?!= JSON.stringify(lang) ?>;try{lang=localStorage.getItem("tootsi_lang")||lang}catch(e){}
+Object.assign(L.en,{slip:"Packing slip"});Object.assign(L.fr,{slip:"Bordereau d'expédition"});
 Object.assign(L.en,{search:"Search",search_ph:"Search PO, container or product…"});Object.assign(L.fr,{search:"Rechercher",search_ph:"Rechercher une commande, un conteneur ou un produit…"});
 Object.assign(L.en,{lg_h:"Sign in",lg_s:"3PL partners: use the username and password Tootsi gave you.",lg_user:"Username",lg_pw:"Password",lg_btn:"Sign in",lg_bad:"Wrong username or password.",lg_locked:"Too many tries. Wait 10 minutes, or call Tootsi Inventory Control.",lg_exp:"Your session ended. Please sign in again.",lg_staff:"Tootsi staff",lg_staffp:"Use your Tootsi Google account. No extra password.",lg_staffb:"Open the PO Hub with Google",lg_forgot:"Forgot your password? Call Tootsi Inventory Control. We reset it in one minute.",lg_tag:"Tootsi deliveries at your warehouse.",lg_p:"See the POs coming to you, receive them and send the photos and counts to Tootsi.",lg_l1:"Only your warehouse's deliveries",lg_l2:"Blind count with automatic recount",lg_l3:"Photos and receiving document in one step",lg_l4:"Report a delay in two taps",logout:"Sign out"});
 Object.assign(L.fr,{lg_h:"Connexion",lg_s:"Partenaires 3PL : utilisez le nom d'utilisateur et le mot de passe fournis par Tootsi.",lg_user:"Nom d'utilisateur",lg_pw:"Mot de passe",lg_btn:"Se connecter",lg_bad:"Nom d'utilisateur ou mot de passe incorrect.",lg_locked:"Trop d'essais. Attendez 10 minutes ou appelez le contrôle d'inventaire Tootsi.",lg_exp:"Votre session est terminée. Veuillez vous reconnecter.",lg_staff:"Employés Tootsi",lg_staffp:"Utilisez votre compte Google Tootsi. Aucun autre mot de passe.",lg_staffb:"Ouvrir le PO Hub avec Google",lg_forgot:"Mot de passe oublié ? Appelez le contrôle d'inventaire Tootsi. On le réinitialise en une minute.",lg_tag:"Les livraisons Tootsi à votre entrepôt.",lg_p:"Voyez les commandes qui arrivent chez vous, recevez-les et envoyez photos et quantités à Tootsi.",lg_l1:"Seulement les livraisons de votre entrepôt",lg_l2:"Comptage à l'aveugle avec recomptage automatique",lg_l3:"Photos et bon de réception en une étape",lg_l4:"Signaler un retard en deux touches",logout:"Déconnexion"});
@@ -82,7 +83,7 @@ function render(){
    <div class="m">${r.shipPlt!=null&&r.shipPlt!==""?fmt(r.shipPlt)+" "+t("pallets")+" · ":""}${esc(loadTxt(r.load))} · ${t("expected")}${t("colon")} <b style="color:var(--ink)">${fd(r.eta)}</b></div>
    ${!r.sent?`<div style="margin-top:6px">${slaPill(r)}</div>`:""}${r.delay?`<div class="m" style="color:#5b3a91;margin-top:4px">⏸ ${esc(t(r.delay.reason))}${r.delay.newDate?" · "+t("d_new")+t("colon")+" "+fds(r.delay.newDate):""}</div>`:""}</div>
    ${r.sent?`<span class="pill ${r.sent.damage?"p-dmg":"p-done"}">${r.sent.damage?t("sent_issue"):t("sent")}</span>`:`<span class="go">${r.req?t("recount_req"):t("receive")} →</span>`}</button>
-   ${!r.sent?`<button type="button" class="delaybtn" data-delay="${esc(r.id)}">${r.delay?t("d_solve"):t("delay_btn")}</button>`:""}</div>`};
+   ${!r.sent?`<div style="display:flex">${(r.lines||[r]).some(x=>x.slip)?`<button type="button" class="delaybtn" style="flex:1;color:var(--ink)" data-slip="${esc((r.lines||[r]).find(x=>x.slip).id)}">📄 ${t("slip")}</button>`:""}<button type="button" class="delaybtn" style="flex:1" data-delay="${esc(r.id)}">${r.delay?t("d_solve"):t("delay_btn")}</button></div>`:""}</div>`};
  const grp=(title,arr,color)=>arr.length?`<div class="group" ${color?`style="color:${color}"`:""}>${title}</div>${arr.map(card).join("")}`:"";
  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
  const counts=[late.length?`<b style="color:#b0182f">${late.length}</b> ${t("late_n")}`:"",today.length?`<b>${today.length}</b> ${t("today")}`:"",`<b>${shipments(todoL).length}</b> ${t("toRecv")}`,req.length?`<b style="color:var(--amber)">${req.length}</b> ${t("recounts")}`:""].filter(Boolean).join(" · ");
@@ -96,10 +97,11 @@ function render(){
  document.querySelectorAll(".po").forEach(el=>el.onclick=()=>{const r=DATA.rows.find(x=>x.id===el.dataset.po);r.sent?showSent(r):openReceive(r)});
  const pq=$("pq");pq.oninput=e=>{q=e.target.value;clearTimeout(pq.t);pq.t=setTimeout(()=>{render();const n=$("pq");n.focus();n.setSelectionRange(n.value.length,n.value.length)},250)};
  document.querySelectorAll("[data-delay]").forEach(b=>b.onclick=()=>openDelay(DATA.rows.find(x=>x.id===b.dataset.delay)));
+ document.querySelectorAll("[data-slip]").forEach(b=>b.onclick=async()=>{busy(true);try{openFile(await call("portalSlip",TOKEN,b.dataset.slip))}catch(e){toast(e.message)}busy(false)});
  $("unpl").onclick=openUnplanned;
 }
 
-const RCV={lines:r=>DATA.rows.filter(x=>x.ship===r.ship&&!x.sent),askP:r=>!!r.askP,upload:f=>call("portalUpload",TOKEN,f),
+const RCV={lines:r=>DATA.rows.filter(x=>x.ship===r.ship&&!x.sent),askP:r=>!!r.askP,upload:f=>call("portalUpload",TOKEN,f),slip:x=>call("portalSlip",TOKEN,x.id),
  check:(r,c)=>call("portalCheckShip",TOKEN,r.id,c),submit:(r,pl)=>call("portalSubmitShip",TOKEN,r.id,pl),after:(r,next)=>{if(next)tab="todo";load()}};
 function showSent(r){const s=r.sent,q=o=>`${fmt(o.plt)} ${t("u_plt")} / ${fmt(o.cs)} ${t("u_cs")}${o.lbs!==""&&o.lbs!=null?" / "+fmt(o.lbs)+" "+t("u_lb"):""}`;
  openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><div class="dsub">${t("ro")} · ${esc(s.at)}</div><h2 class="mono" id="dtitle" tabindex="-1">PO ${esc(r.po)}</h2><div>${esc(r.item)} · ${esc(r.desc)}</div></div>

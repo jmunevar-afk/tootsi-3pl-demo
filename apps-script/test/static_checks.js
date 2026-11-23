@@ -8,24 +8,34 @@ let pass = 0, fail = 0;
 const ok = (n, c, info) => { if (c) { pass++; console.log('PASS ' + n); } else { fail++; console.log('FAIL ' + n + (info !== undefined ? ' · ' + JSON.stringify(info) : '')); } };
 
 // ---------- 1. public function audit ----------
-const fnRe = /^function (\w+)\s*\(([^)]*)\)\s*\{/gm, bodies = Object.create(null);
+const fnRe = /^[ \t]*function (\w+)\s*\(([^)]*)\)\s*\{/gm, bodies = Object.create(null);
 let m; const starts = [];
 while ((m = fnRe.exec(code))) starts.push({ name: m[1], at: m.index });
 starts.forEach((s, i) => { bodies[s.name] = code.slice(s.at, i + 1 < starts.length ? starts[i + 1].at : code.indexOf('var HTML_FILES')); });
-const SENSITIVE = /\b(SpreadsheetApp|DriveApp|MailApp|ScriptApp|PropertiesService|CacheService|LockService|readAll_|append_|upsert_|upsertWhere_|deleteWhere_|saveFile_|saveIncoming_|takeFile_|config_|sheet_)\b/;
+const SENSITIVE = /\b(\w+App|PropertiesService|CacheService|LockService|Session|HtmlService|readAll_|append_|upsert_|upsertWhere_|deleteWhere_|saveFile_|saveIncoming_|takeFile_|config_|sheet_)\b/;
 const reach = Object.create(null);
 function reaches(n, seen = new Set()) {
   if (n in reach) return reach[n]; if (seen.has(n)) return false; seen.add(n);
   const b = bodies[n]; if (!b) return false;
   if (SENSITIVE.test(b.replace(/^function [^{]+\{/, ''))) return (reach[n] = true);
-  const calls = [...b.matchAll(/\b(\w+)\s*\(/g)].map(x => x[1]).filter(x => x !== n && bodies[x]);
+  const calls = [...b.matchAll(/\b(\w+)\b/g)].map(x => x[1]).filter(x => x !== n && bodies[x]);
   return (reach[n] = calls.some(c => reaches(c, seen)));
 }
-const GUARD = /^function [^{]+\{\s*(?:\/\/[^\n]*\n\s*)*(?:var \w+ = )?(hubUser_|tplUser_|requireOwner_)\(|^function [^{]+\{\s*requireOwner_\(|^function [^{]+\{\s*try \{ (tplUser_|hubUser_)\(|^function [^{]+\{\s*\w[\w\s=,]*\b(hubUser_|tplUser_)\(/;
-const EXEMPT = { doGet: 'routes after checking the Google account', include: 'returns page HTML only', portalLogin: 'is the login itself' };
+const GUARD = /^\s*function [^{]+\{\s*(?:\/\/[^\n]*\n\s*)*(?:var \w+ = )?(hubUser_|tplUser_|requireOwner_)\([^)]*\)\s*[;,]/;
+const EXEMPT = { doGet: 'routes after checking the Google account', include: 'returns page HTML only', portalLogin: 'is the login itself', portalLogout: 'only deletes the session it is given, after checking it' };
 const pub = starts.map(s => s.name).filter(n => !/_$/.test(n));
 const exposed = pub.filter(n => reaches(n) && !EXEMPT[n] && !GUARD.test(bodies[n]));
 ok('every browser-callable function that reaches data checks the caller first', exposed.length === 0, exposed);
+// the audit must catch the 4 bypasses found in review
+const evil = ['function a(){ try { hubUser_(); } catch (e) {} return readAll_("Users"); }', '  function b(){ return readAll_("Users"); }', 'function c(){ return [1].map(d); }\nfunction d(){ return GmailApp.search("x"); }', 'function e(){ return UrlFetchApp.fetch("x"); }'];
+evil.forEach((src, i) => {
+  const B = Object.create(null), st2 = []; let mm; const re = /^[ \t]*function (\w+)\s*\(([^)]*)\)\s*\{/gm;
+  while ((mm = re.exec(src))) st2.push({ name: mm[1], at: mm.index });
+  st2.forEach((x, k) => { B[x.name] = src.slice(x.at, k + 1 < st2.length ? st2[k + 1].at : src.length); });
+  const R = Object.create(null), rr = (n, seen = new Set()) => { if (n in R) return R[n]; if (seen.has(n)) return false; seen.add(n); const b = B[n]; if (!b) return false; if (SENSITIVE.test(b.replace(/^\s*function [^{]+\{/, ''))) return (R[n] = true); return (R[n] = [...b.matchAll(/\b(\w+)\b/g)].map(x => x[1]).filter(x => x !== n && B[x]).some(c => rr(c, seen))); };
+  const caught = st2.map(x => x.name).filter(n => !/_$/.test(n) && rr(n) && !GUARD.test(B[n]));
+  ok('audit catches bypass #' + (i + 1), caught.length > 0, src);
+});
 ok('Store helpers are private', ['readAll', 'append', 'upsert', 'deleteWhere', 'upsertWhere'].every(n => !bodies[n]));
 console.log('   public functions that reach data (all guarded): ' + pub.filter(n => reaches(n)).join(', '));
 

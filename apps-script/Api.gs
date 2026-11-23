@@ -70,7 +70,7 @@ function ctx_() {
 }
 function loadState_() {
   clearCache_();
-  return indexState({ pos: readAll_('POs'), subs: readAll_('Submissions'), issues: readAll_('Issues'), notes: readAll_('Notes'), delays: readAll_('Delays'), recounts: readAll_('Recounts'), docs: readAll_('Docs'), supq: readAll_('SupplierQty') });
+  return indexState({ slips: readAll_('Slips'), mseen: readAll_('MasterSeen'), pos: readAll_('POs'), subs: readAll_('Submissions'), issues: readAll_('Issues'), notes: readAll_('Notes'), delays: readAll_('Delays'), recounts: readAll_('Recounts'), docs: readAll_('Docs'), supq: readAll_('SupplierQty') });
 }
 /** Recompute issues and save what changed. Also emails new urgent issues. */
 function sync_(st, ctx) {
@@ -81,7 +81,8 @@ function sync_(st, ctx) {
     if (isNew || esc || chg) mail.push(is); // email only when an issue is created or becomes urgent
   });
   notifyIssues_(mail, ctx);
-  r.notes.forEach(function (n) { append_('Notes', n); });
+  var seenN = {};
+  r.notes.forEach(function (n) { var k = String(n.id).split('|')[0] + '|' + n.text.replace(/\(.*\)/, ''); if (seenN[k]) return; seenN[k] = true; append_('Notes', n); });
   return st;
 }
 var _locked = false;
@@ -117,7 +118,7 @@ function portalLoad(token) {
 function myPO_(st, id, u) { var p = st.pos.filter(function (x) { return String(x.id) === String(id); })[0]; if (!p || p.wh !== u.wh || p.closed) throw new Error('PO not found.'); return p; }
 
 /** Step 1 of any upload: one file per call, so big containers never hit Google's size limit. Returns a file id, never a link. */
-function portalUpload(token, f) { var u = tplUser_(token); return saveIncoming_(u.wh, checkFile_(f)); }
+function portalUpload(token, f) { var u = tplUser_(token); uploadQuota_(u.wh); return saveIncoming_(u.wh, checkFile_(f)); }
 
 /** Blind check for a whole shipment. Answers which lines (and whether the pallet total) are off, never the expected numbers.
  *  At most 2 wrong checks per receiving round, recorded on the server. */
@@ -127,18 +128,22 @@ function portalCheckShip(token, id, f) {
 }
 function portalSubmitShip(token, id, f) {
   var u = tplUser_(token);
-  return withLock_(function () { var ctx = ctx_(), st = loadState_(); return submitShip_(myPO_(st, id, u), st, ctx, f || {}, u.name + ' receiving', true, u.wh); });
+  var out = withLock_(function () { var ctx = ctx_(), st = loadState_(); return submitShip_(myPO_(st, id, u), st, ctx, f || {}, u.name + ' receiving', true, u.wh); });
+  finishMoves_(out._moves); delete out._moves;
+  return out;
 }
 
 function portalDelay(token, id, d) {
-  var u = tplUser_(token);
+  var u = tplUser_(token); d = d || {};
+  var ctx0 = ctx_(); myPO_(loadState_(), id, u);
+  if (!DELAY_OWNER[d.reason] || String(d.note || '').trim().length < 5) throw new Error('Reason and details are required.');
+  var newDate = String(d.newDate || '');
+  if (newDate && (!/^\d{4}-\d{2}-\d{2}$/.test(newDate) || newDate < ctx0.today || newDate > addDays(ctx0.today, 21))) throw new Error('The new date must be within the next 3 weeks.');
+  // photos are saved before taking the lock (Drive is slow)
+  var files = (d.files || []).slice(0, 10).map(function (f) { var s = saveFile_(id, checkFile_(f)); s.cat = 'Delay photo'; return s; });
   return withLock_(function () {
     var ctx = ctx_(), st = loadState_(), p = myPO_(st, id, u);
-    if (!DELAY_OWNER[d.reason] || String(d.note || '').trim().length < 5) throw new Error('Reason and details are required.');
-    var newDate = String(d.newDate || '');
-    if (newDate && (!/^\d{4}-\d{2}-\d{2}$/.test(newDate) || newDate < ctx.today || newDate > addDays(ctx.today, 21))) throw new Error('The new date must be within the next 3 weeks.');
     var lines = shipLines(p, st).filter(function (x) { return x.wh === u.wh && !isDone(x, st) && !st.delay[x.id]; });
-    var files = (d.files || []).slice(0, 10).map(function (f) { var s = saveFile_(p.id, checkFile_(f)); s.cat = 'Delay photo'; return s; });
     var note = String(d.note).trim().slice(0, 1000);
     lines.forEach(function (x, i) {
       append_('Delays', { delayId: Utilities.getUuid(), id: x.id, reason: d.reason, note: note, newDate: newDate, by: u.name + ' receiving', at: ctx.stamp, date: ctx.today, closedAt: '', filesJson: i ? [] : files });
@@ -170,33 +175,19 @@ function portalSolveDelay(token, id) {
 }
 
 function portalUnplanned(token, d) {
-  var u = tplUser_(token);
+  var u = tplUser_(token); d = d || {};
+  if (!(d.files && d.files.length) || !String(d.desc || '').trim()) throw new Error('Paperwork photo and product are required.');
+  var po = String(d.po || '').replace(/[^\d-]/g, '').slice(0, 15);
+  var mine = po ? loadState_().pos.filter(function (x) { return x.po === po && x.wh === u.wh && !x.closed; }) : [];
+  if (mine.length) throw new Error('This PO is already in your list. Look for it under "To receive".');
+  // photos saved before the lock; Tootsi (Logistics) confirms the PO in the hub, which links it to the planned lines
+  var folder = 'unplanned', files = d.files.slice(0, 10).map(function (f) { var s = saveFile_(folder, checkFile_(f)); s.cat = 'Paperwork (arrived not on list)'; return s; })
+    .concat((d.loadFiles || []).slice(0, 10).map(function (f) { var s = saveFile_(folder, checkFile_(f)); s.cat = 'Load photo (arrived not on list)'; return s; }));
   return withLock_(function () {
     var ctx = ctx_(), st = loadState_();
-    if (!(d.files && d.files.length) || !String(d.desc || '').trim()) throw new Error('Paperwork photo and product are required.');
-    var po = String(d.po || '').replace(/[^\d-]/g, '').slice(0, 15);
-    // the PO may already be in the hub without a destination: then it is simply "for this warehouse"
-    var match = po ? st.pos.filter(function (x) { return x.po === po && !isDone(x, st) && (!x.wh || x.wh === u.wh); }) : [];
-    if (match.length) {
-      var saved = d.files.slice(0, 10).map(function (f) { var s = saveFile_(match[0].id, checkFile_(f)); return s; })
-        .concat((d.loadFiles || []).slice(0, 10).map(function (f) { return saveFile_(match[0].id, checkFile_(f)); }));
-      saved.forEach(function (s) { append_('Docs', { id: match[0].id, cat: 'Paperwork from ' + u.wh + ' (arrived)', name: s.name, url: s.url, by: u.name + ' receiving', at: ctx.stamp }); });
-      match.forEach(function (x) {
-        var m = String(x.manual || '').split(',').filter(String);
-        if (!x.wh) { x.wh = u.wh; if (m.indexOf('wh') < 0) m.push('wh'); }
-        x.clockFrom = ctx.today; x.manual = m.join(','); savePO_(x, ctx);
-      });
-      notePOs_(match, u.name + ' receiving', 'Arrived at ' + u.wh + '. The PO was in the hub, now assigned to ' + u.wh + '. Paperwork attached.', ctx, true);
-      logAction_(u.name, 'unplanned-matched', match[0].id, po);
-      sync_(loadState_(), ctx);
-      return portalLoad(token);
-    }
-    var n = st.pos.filter(function (p) { return /^NEW-/.test(p.id); }).length + 1;
-    var id = 'NEW-' + n;
-    var files = d.files.slice(0, 10).map(function (f) { var s = saveFile_(id, checkFile_(f)); s.cat = 'Paperwork (arrived not on list)'; return s; })
-      .concat((d.loadFiles || []).slice(0, 10).map(function (f) { var s = saveFile_(id, checkFile_(f)); s.cat = 'Load photo (arrived not on list)'; return s; }));
+    var n = st.pos.filter(function (p) { return /^NEW-/.test(p.id); }).length + 1, id = 'NEW-' + n;
     var p = { id: id, po: po || id, item: '', wh: u.wh, desc: String(d.desc).trim().toUpperCase().slice(0, 200), supplier: String(d.sup || '').trim().slice(0, 200) || 'Unknown', eta: ctx.today, clockFrom: '', cntr: String(d.cntr || '').trim().toUpperCase().slice(0, 30),
-      plt: num(d.plt), cs: '', lbs: '', load: 'Unknown', alloc: '', qc: 'Not received', source: 'unplanned', addedBy: u.name + ' receiving',
+      plt: num(d.plt) != null && num(d.plt) >= 0 && num(d.plt) <= 200 ? num(d.plt) : '', cs: '', lbs: '', load: 'Unknown', alloc: '', qc: 'Not received', source: 'unplanned', addedBy: u.name + ' receiving',
       unplannedJson: { by: u.name + ' receiving', at: ctx.stamp, files: files }, planOk: false };
     savePO_(p, ctx);
     note_(id, u.name + ' receiving', 'Arrived at ' + u.wh + ' but not on the upcoming list. Paperwork attached.', ctx, true);
@@ -210,8 +201,13 @@ function portalUnplanned(token, d) {
 /** Lines to receive now: every line of the shipment not yet received. */
 function openLines_(p, st) { return shipLines(p, st).filter(function (x) { return x.wh === p.wh && !isDone(x, st); }); }
 /** Pallets are counted once per shipment, and only on the first receiving (not on a recount of one line). */
-function palletsAsked_(p, st) { return shipFresh(p, st); }
-function roundStart_(lines, st) { var t = ''; lines.forEach(function (x) { if (st.req[x.id] && String(st.req[x.id].at) > t) t = String(st.req[x.id].at); }); return t; }
+/** Pallets are counted on the first receiving of a shipment, and again when the line that holds the pallet count is recounted. */
+function palletsAsked_(p, st) {
+  if (shipFresh(p, st)) return true;
+  return openLines_(p, st).some(function (x) { return (st.hist[x.id] || []).some(function (s) { return s.plt !== '' && s.plt != null; }); });
+}
+/** A receiving round starts at the last recount request, and never looks back more than 7 days. */
+function roundStart_(lines, st, ctx) { var t = addDays(ctx.today, -7) + ' 00:00'; lines.forEach(function (x) { if (st.req[x.id] && String(st.req[x.id].at) > t) t = String(st.req[x.id].at); }); return t; }
 function wrongChecks_(key, since) { return readAll_('Checks').filter(function (c) { return c.key === key && c.off !== '' && String(c.at) >= since; }); }
 
 /** Compare a shipment count to what is expected. Returns the off lines and whether the pallet total is off. */
@@ -227,7 +223,7 @@ function shipDiff_(p, st, ctx, f) {
   return { lines: lines, off: off, plt: pltOff, askP: askP, grp: grp };
 }
 function checkShipCall_(p, st, ctx, f, by) {
-  var r = shipDiff_(p, st, ctx, f), key = shipKey(p), since = roundStart_(r.lines, st);
+  var r = shipDiff_(p, st, ctx, f), key = shipKey(p), since = roundStart_(r.lines, st, ctx);
   var wrong = wrongChecks_(key, since);
   if (wrong.length >= 2) { var last = wrong[wrong.length - 1]; return { match: false, limit: true, off: String(last.off).split(',').filter(String) }; }
   var offList = r.off.slice(); if (r.plt) offList.push('pallets');
@@ -235,53 +231,98 @@ function checkShipCall_(p, st, ctx, f, by) {
   return { match: !offList.length, off: offList, tries: wrong.length + (offList.length ? 1 : 0) };
 }
 
+/** The line that carries the pallet count of a shipment: the one that carried it before (recount), else the first open line. */
+function palletHolder_(lines, st) {
+  var h = lines.filter(function (x) { return (st.hist[x.id] || []).some(function (s) { return s.plt !== '' && s.plt != null; }); })[0];
+  return (h || lines[0] || {}).id;
+}
+
+/**
+ * Save a shipment receipt. All checks first, then all rows; photos are moved into the PO folder AFTER the lock
+ * (see finishMoves_), so a big container never blocks other users and a failure never leaves half a receipt.
+ */
 function submitShip_(p, st, ctx, f, by, ext, wh) {
-  var r = shipDiff_(p, st, ctx, f), lines = r.lines, key = shipKey(p);
+  var lines = openLines_(p, st), key = shipKey(p);
   if (!lines.length) throw new Error('Already received. Contact Tootsi Inventory Control to change it.');
   var byId = {}; (f.lines || []).forEach(function (L) { byId[L.id] = L; });
   if (lines.some(function (x) { return !byId[x.id]; })) throw new Error('Enter every item of this shipment (0 cases if an item did not come).');
-  if (!f.recv || !/^\d{4}-\d{2}-\d{2}$/.test(f.recv) || f.recv > ctx.today) throw new Error('The date received can\'t be in the future.');
-  if (r.askP && (num(f.plt) == null || num(f.plt) < 0)) throw new Error('Enter the number of pallets.');
+  if (!f.recv || !/^\d{4}-\d{2}-\d{2}$/.test(f.recv) || f.recv > ctx.today || f.recv < addDays(ctx.today, -60)) throw new Error('Check the date received (not in the future, not more than 60 days ago).');
+  var askP = palletsAsked_(p, st);
+  if (askP && (num(f.plt) == null || num(f.plt) < 0 || num(f.plt) > 200)) throw new Error('Enter the number of pallets.');
   lines.forEach(function (x) {
     var L = byId[x.id], cs = num(L.cs), lb = num(L.lbs);
-    if (cs == null || cs < 0 || (lb != null && lb < 0)) throw new Error('Enter cases (0 or more) for item ' + x.item + '.');
+    if (cs == null || cs < 0 || cs > 1000000 || (lb != null && (lb < 0 || lb > 200000))) throw new Error('Enter cases (0 or more) for item ' + x.item + '.');
     if (cs > 0 && (!String(L.lot || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(L.exp || '')) || L.exp <= f.recv)) throw new Error('Lot and expiry are required for item ' + x.item + '. Expiry must be after the date received.');
     if (cs > 0 && !(L.label || []).length) throw new Error('Label photo missing for item ' + x.item + '.');
   });
   if (!f.cond) throw new Error('Choose the load condition.');
   var bad = f.cond !== 'Good';
   if (bad && String(f.dmgText || '').trim().length < 10) throw new Error('Describe the damage.');
-  if ((r.askP && !(f.load || []).length) || !(f.doc || []).length || (bad && !(f.dmg || []).length)) throw new Error('Photos and documents are missing.');
-  var offAll = r.off.length || r.plt, wrong = wrongChecks_(key, roundStart_(lines, st));
-  if (offAll && !wrong.length) throw new Error('RECOUNT'); // the count must go through the check (and recount) first
-  if (offAll && String(f.diffNote || '').trim().length < 10) throw new Error('Explain the difference.');
-  // first count = the first wrong check of this round, taken from the server (not from the browser)
+  if ((askP && !(f.load || []).length) || !(f.doc || []).length || (bad && !(f.dmg || []).length)) throw new Error('Photos and documents are missing.');
+  // 1. every photo must be a real upload of this warehouse (checked BEFORE the count, so a fake submit learns nothing)
+  var files = {}, verify = function (ids) { return (ids || []).slice(0, 20).map(function (fid) { if (!files[fid]) files[fid] = verifyFile_(fid, wh); return files[fid]; }); };
+  var sharedRaw = [[f.load, 'Load photo (before unloading)'], [f.doc, 'Receiving document'], [f.dmg, 'Damage photo']];
+  sharedRaw.forEach(function (z) { verify(z[0]); });
+  lines.forEach(function (x) { verify(byId[x.id].label); });
+  // 2. the count: a submit with a different count is recorded like a check (same 2-try limit)
+  var r = shipDiff_(p, st, ctx, f), offAll = r.off.length || r.plt;
+  var wrong = wrongChecks_(key, roundStart_(lines, st, ctx));
+  var record = function () { var offList = r.off.slice(); if (r.plt) offList.push('pallets'); if (wrong.length < 2) append_('Checks', { key: key, at: ctx.stamp, by: by, off: offList.join(','), countJson: { plt: num(f.plt), lines: (f.lines || []).map(function (L) { return { id: L.id, cs: num(L.cs), lbs: num(L.lbs) }; }) } }); };
+  if (offAll && !wrong.length) { record(); throw new Error('RECOUNT'); }
+  if (offAll && String(f.diffNote || '').trim().length < 10) { record(); throw new Error('Explain the difference.'); }
+  // first count = the first wrong check of this round, from the server (never from the browser)
   var first = wrong.length ? (wrong[0].countJson || {}) : null, firstLine = {};
   if (first) (first.lines || []).forEach(function (L) { firstLine[L.id] = L; });
-  // files: already uploaded one by one; now move them into the PO folder
-  var take = function (ids, cat, poId) { return (ids || []).slice(0, 20).map(function (fid) { var s = takeFile_(fid, wh, poId); s.cat = cat; return s; }); };
-  var lead = lines[0].id;
-  var shared = take(f.load, 'Load photo (before unloading)', lead).concat(take(f.doc, 'Receiving document', lead), take(f.dmg, 'Damage photo', lead));
-  var grp = lines.length > 1 || shipLines(p, st).length > 1 ? r.grp : '';
-  var plt = r.askP ? num(f.plt) : '';
+  // 3. write all rows
+  var moves = [], lead = lines[0].id, holder = askP ? palletHolder_(lines, st) : null;
+  var asFiles = function (ids, cat, poId) { return (ids || []).slice(0, 20).map(function (fid) { var v = files[fid]; moves.push({ fid: fid, who: wh, poId: poId }); return { cat: cat, name: v.name, url: v.url, fileId: fid }; }); };
+  var shared = [];
+  sharedRaw.forEach(function (z) { shared = shared.concat(asFiles(z[0], z[1], lead)); });
+  var multi = shipLines(p, st).length > 1;
   var comment = String(f.comment || '').trim().slice(0, 500), note = String(f.diffNote || '').trim().slice(0, 1000);
   lines.forEach(function (x) {
-    var L = byId[x.id], cs = num(L.cs), lb = num(L.lbs);
-    var fl = firstLine[x.id], lineOff = r.off.indexOf(x.id) >= 0;
+    var L = byId[x.id], cs = num(L.cs), lb = num(L.lbs), isHolder = x.id === holder;
+    var fl = firstLine[x.id], lineOff = r.off.indexOf(x.id) >= 0, pOff = isHolder && r.plt;
     var hist = st.hist[x.id] || [];
-    append_('Submissions', { subId: Utilities.getUuid(), id: x.id, seq: hist.length + 1, superseded: false, by: by, at: ctx.stamp, recv: f.recv, plt: plt, cs: cs, lbs: lb == null ? '' : lb,
-      firstJson: first && (lineOff || r.plt) ? { plt: first.plt, cs: fl ? fl.cs : null, lbs: fl ? fl.lbs : null } : null,
-      diffNote: (lineOff || r.plt) ? note : '', lot: String(L.lot || '').trim().slice(0, 60), exp: L.exp || '', cond: f.cond, damage: bad, dmgText: bad ? String(f.dmgText).trim().slice(0, 1000) : '', comment: comment,
-      filesJson: shared.concat(take(L.label, 'Label photo', x.id)), ship: key, grpPlt: grp == null ? '' : grp });
+    append_('Submissions', { subId: Utilities.getUuid(), id: x.id, seq: hist.length + 1, superseded: false, by: by, at: ctx.stamp, recv: f.recv,
+      // the pallet count of the shipment sits on ONE line only, so a pallet gap is one issue and one claim, not one per item
+      plt: isHolder ? num(f.plt) : '', cs: cs, lbs: lb == null ? '' : lb,
+      firstJson: first && (lineOff || pOff) ? { plt: pOff ? first.plt : null, cs: fl ? fl.cs : null, lbs: fl ? fl.lbs : null } : null,
+      diffNote: (lineOff || pOff) ? note : '', lot: String(L.lot || '').trim().slice(0, 60), exp: L.exp || '', cond: f.cond, damage: bad, dmgText: bad ? String(f.dmgText).trim().slice(0, 1000) : '', comment: comment,
+      filesJson: shared.concat(asFiles(L.label, 'Label photo', x.id)), ship: key, grpPlt: isHolder && multi && r.grp != null ? r.grp : '' });
     if (st.req[x.id]) { st.req[x.id].active = false; upsert_('Recounts', 'id', st.req[x.id]); }
     if (st.delay[x.id]) { var dl = st.delay[x.id]; dl.closedAt = ctx.stamp; upsert_('Delays', 'delayId', dl); }
     if (!x.qc || x.qc === 'Not received') { x.qc = 'Locked'; x.qcAt = f.recv; savePO_(x, ctx); }
   });
   if (comment) notePOs_(lines, by, comment, ctx, ext);
-  logAction_(by, 'receipt', key, lines.length + ' lines' + (r.askP ? ' / ' + plt + ' plt' : '') + (bad ? ' / ' + f.cond : ''));
+  logAction_(by, 'receipt', key, lines.length + ' lines' + (askP ? ' / ' + num(f.plt) + ' plt' : '') + (bad ? ' / ' + f.cond : ''));
+  queueMaster_(lines, byId, f, wh, ctx);
   sync_(loadState_(), ctx);
-  return { ok: true, flagged: !!offAll || bad, n: lines.length };
+  return { ok: true, flagged: !!offAll || bad, n: lines.length, _moves: moves };
 }
+
+/** After a 3PL receipt: queue the master-sheet fills (only empty cells will ever be filled; see syncMaster_ in Jobs). */
+function queueMaster_(lines, byId, f, wh, ctx) {
+  if (!isTPL(wh) || !config_().MASTER_SHEET_ID || String(config_().MASTER_MODE || 'preview') === 'off') return;
+  var docs = ''; try { docs = poFolder_(lines[0].id).getUrl(); } catch (e) {}
+  lines.forEach(function (x) {
+    var L = byId[x.id], cs = num(L.cs); if (!(cs > 0)) return;
+    var vals = { item: x.item, desc: x.desc, recv: f.recv, exp: L.exp, units: cs, docs: docs };
+    Object.keys(vals).forEach(function (k) {
+      if (vals[k] === '' || vals[k] == null) return;
+      upsertWhere_('MasterSync', function (r) { return r.key === x.id + '|' + k; }, { key: x.id + '|' + k, at: ctx.stamp, po: x.po, item: x.item, wh: wh, field: k, value: String(vals[k]), status: 'pending', row: '' });
+    });
+  });
+}
+
+/** Supplier packing slip of a PO (from Arash's extractor). The 3PL gets it only for its own POs, and only if SLIP_TO_3PL = yes. */
+function portalSlip(token, id) {
+  var u = tplUser_(token), st = loadState_(), p = myPO_(st, id, u);
+  if (String(config_().SLIP_TO_3PL || 'yes') !== 'yes') throw new Error('Not available.');
+  var s = st.slip[p.po]; if (!s || s.status !== 'FOUND' || !s.fileId) throw new Error('No packing slip yet.');
+  return slipFile_(s.fileId);
+}
+function hubSlip(id) { hubUser_(); var st = loadState_(), p = findPO_(st, id), s = st.slip[p.po]; if (!s || !s.fileId) throw new Error('No packing slip yet.'); return slipFile_(s.fileId); }
 
 /** One note per PO (notes are shown per PO), even when a shipment has many lines. */
 function notePOs_(lines, who, text, ctx, ext) { var seen = {}; lines.forEach(function (x) { if (seen[x.po]) return; seen[x.po] = true; note_(x.id, who, text, ctx, ext); }); }
@@ -295,7 +336,13 @@ function hubLoad() {
   return { me: me, today: ctx.today, rows: st.pos.map(function (p) { return hubRow(p, st, ctx); }), cfg: { nudgeH: ctx.cfg.SLA_NUDGE_H || 9, escH: ctx.cfg.SLA_ESC_H || 18, portalUrl: String(ctx.cfg.PORTAL_URL || ''), goLive: String(ctx.cfg.GO_LIVE || '') } };
 }
 /** Staff uploads (BM/LY/HB receiving photos). One file per call. */
-function hubUpload(f) { hubUser_(); return saveIncoming_('HUB', checkFile_(f)); }
+function hubUpload(f) { hubUser_(); uploadQuota_('HUB'); return saveIncoming_('HUB', checkFile_(f)); }
+/** At most 200 uploads per hour per warehouse, so nobody can fill the Drive. */
+function uploadQuota_(who) {
+  var c = CacheService.getScriptCache(), k = 'upq_' + who + '_' + Utilities.formatDate(new Date(), 'America/Toronto', 'yyyyMMddHH'), n = Number(c.get(k) || 0);
+  if (n >= 200) throw new Error('Too many photos this hour. Please wait a few minutes.');
+  c.put(k, String(n + 1), 3700);
+}
 function hubDetailLoad(id) {
   hubUser_(); var ctx = ctx_(), st = loadState_();
   return hubDetail(findPO_(st, id), st, ctx);
@@ -303,7 +350,8 @@ function hubDetailLoad(id) {
 /** One entry point for all internal edits. action = what to do, d = data. */
 function hubAction(id, action, d) {
   var me = hubUser_();
-  return withLock_(function () {
+  var preDoc = action === 'doc' ? saveFile_(id, checkFile_((d || {}).file)) : null; // Drive save outside the lock
+  var out = withLock_(function () {
     var ctx = ctx_(), st = loadState_(), p = id ? findPO_(st, id) : null, is = id ? st.issue[id] : null;
     d = d || {};
     switch (action) {
@@ -317,9 +365,25 @@ function hubAction(id, action, d) {
         // fields changed by hand are marked "manual": the Upcoming sheet import will not overwrite them
         var man = String(p.manual || '').split(',').filter(String), mark = function (k) { if (man.indexOf(k) < 0) man.push(k); }, ch = [];
         ['plt', 'cs', 'lbs'].forEach(function (k) { if (d[k] !== undefined && d[k] !== '') { var v = num(d[k]); if (v == null || v < 0) throw new Error('Quantities must be 0 or more.'); if (String(v) !== String(p[k])) { ch.push(k + ' ' + v); p[k] = v; if (k !== 'cs') mark(k); } } });
-        if (d.wh && d.wh !== p.wh) { if (OWN_WH.concat(TPL_WH).indexOf(d.wh) < 0) throw new Error('Unknown warehouse.'); p.wh = d.wh; mark('wh'); ch.push('destination ' + d.wh); }
-        if (d.eta && d.eta !== p.eta) { if (!/^\d{4}-\d{2}-\d{2}$/.test(d.eta)) throw new Error('Bad date.'); p.eta = d.eta; mark('eta'); ch.push('ETA ' + d.eta); }
-        p.manual = man.join(','); savePO_(p, ctx); note_(id, me, 'Expected data updated' + (ch.length ? ': ' + ch.join(', ') : ''), ctx); break;
+        if (d.wh && d.wh !== p.wh && st.sub[p.id]) throw new Error('Already received at ' + p.wh + '. The destination can no longer change.');
+        if (d.wh && OWN_WH.concat(TPL_WH).indexOf(d.wh) < 0) throw new Error('Unknown warehouse.');
+        if (d.eta && !/^\d{4}-\d{2}-\d{2}$/.test(d.eta)) throw new Error('Bad date.');
+        // ETA, destination and pallets belong to the whole shipment: change every open line of it, not just this one
+        var sib = openLines_(p, st).filter(function (x) { return x.id !== p.id; });
+        var whCh = d.wh && d.wh !== p.wh;
+        [p].concat(sib).forEach(function (x) {
+          var mx = String(x.manual || '').split(',').filter(String), mk = function (k) { if (mx.indexOf(k) < 0) mx.push(k); };
+          if (d.eta && d.eta !== x.eta) { x.eta = d.eta; mk('eta'); }
+          if (d.wh && d.wh !== x.wh) { x.wh = d.wh; mk('wh'); }
+          if (x !== p && d.plt !== undefined && d.plt !== '' && num(d.plt) != null && String(num(d.plt)) !== String(x.plt)) { x.plt = num(d.plt); mk('plt'); }
+          if (x === p) { man.forEach(mk); }
+          x.manual = mx.join(','); savePO_(x, ctx);
+        });
+        if (whCh) ch.push('destination ' + d.wh);
+        if (d.eta) ch.push('ETA ' + d.eta);
+        note_(id, me, 'Expected data updated' + (ch.length ? ': ' + ch.join(', ') : '') + (sib.length && (d.eta || d.wh) ? ' (whole shipment, ' + (sib.length + 1) + ' lines)' : ''), ctx); break;
+      case 'syncNow': // staff: pull the Upcoming sheet, packing slips and the master sheet right now
+        return { ok: true, sync: syncSources_() };
       case 'expectedBulk': // expected cases for several lines of the same PO in one save
         var setN = 0;
         Object.keys(d.cs || {}).forEach(function (lid) {
@@ -355,7 +419,7 @@ function hubAction(id, action, d) {
         p.nudged = ctx.today; savePO_(p, ctx); note_(id, me, 'Nudge sent to ' + p.wh, ctx); notify3pl_(p, 'nudge', ctx); break;
       case 'sap': p.sap = ctx.today; savePO_(p, ctx); note_(id, me, 'Entered in SAP / WMS', ctx); break;
       case 'note': if (String(d.text || '').trim()) note_(id, me, String(d.text).trim(), ctx); break;
-      case 'doc': var f = saveFile_(id, checkFile_(d.file)); append_('Docs', { id: id, cat: d.cat || 'Other', name: f.name, url: f.url, by: me, at: ctx.stamp }); break;
+      case 'doc': var f = preDoc; append_('Docs', { id: id, cat: d.cat || 'Other', name: f.name, url: f.url, by: me, at: ctx.stamp }); break;
       case 'receive': // Tootsi receiving at BM / LY / HB, a whole shipment at once
         if (isTPL(p.wh)) throw new Error('3PL POs are received by the 3PL.');
         return submitShip_(p, st, ctx, d, 'Tootsi receiving (' + p.wh + ') · ' + me, false, 'HUB');
@@ -363,6 +427,15 @@ function hubAction(id, action, d) {
       case 'confirmUnplanned':
         var np = String(d.po || '').trim(); if (!/^\d{3,10}(-\d+)?$/.test(np)) throw new Error('Enter the PO number from SAP.');
         var cs = num(d.cs), lb = num(d.lbs); if (cs == null || cs < 0 || lb == null || lb < 0) throw new Error('Enter expected cases and lb.');
+        // the PO may already be in the hub (no destination, or planned for another warehouse): move those lines here, no duplicate
+        var planned = st.pos.filter(function (x) { return x.po === np && x.id !== p.id && !isDone(x, st); });
+        if (planned.length) {
+          planned.forEach(function (x) { var m = String(x.manual || '').split(',').filter(String); if (m.indexOf('wh') < 0) m.push('wh'); x.manual = m.join(','); x.wh = p.wh; x.clockFrom = ctx.today; savePO_(x, ctx); });
+          (p.unplannedJson.files || []).forEach(function (f) { append_('Docs', { id: planned[0].id, cat: f.cat, name: f.name, url: f.url, by: p.unplannedJson.by, at: p.unplannedJson.at }); });
+          p.planOk = true; p.closed = ctx.today + ' · merged into PO ' + np; savePO_(p, ctx);
+          notePOs_(planned, me, 'Arrived at ' + p.wh + ' without notice; confirmed by ' + me + '. ' + planned.length + ' planned line(s) moved to ' + p.wh + '. Paperwork from ' + p.unplannedJson.by + ' attached.', ctx);
+          break;
+        }
         p.po = np; p.item = String(d.item || '').trim(); p.cs = cs; p.lbs = lb; p.planOk = true; p.clockFrom = ctx.today; savePO_(p, ctx);
         note_(id, me, 'PO confirmed as ' + np + ' and added to the plan. ' + p.wh + ' can now receive it.', ctx); break;
       case 'addPO':
@@ -380,6 +453,8 @@ function hubAction(id, action, d) {
     sync_(loadState_(), ctx);
     return { ok: true };
   });
+  if (out && out._moves) { finishMoves_(out._moves); delete out._moves; }
+  return out;
 }
 function upsertSupQ_(id, kind, v, me, ctx) {
   upsertWhere_('SupplierQty', function (r) { return r.id === id && r.kind === kind; }, { id: id, kind: kind, plt: v.plt, cs: v.cs, lbs: v.lbs, by: me, at: ctx.stamp });

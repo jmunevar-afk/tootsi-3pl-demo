@@ -60,6 +60,7 @@ function drawReceive(){
  <div class="db">
   ${form.banner?`<div class="sec"><div class="banner" role="alert">${t("notsent")}</div></div>`:r.req?`<div class="sec"><div class="banner">${t("r_req")}</div></div>`:""}
   ${r.instr?`<div class="sec"><div class="instr"><b>${t("instr")}${t("colon")}</b> ${esc(r.instr)}</div></div>`:""}
+  ${RCV.slip&&curLines.some(x=>x.slip)?`<div class="sec"><button type="button" class="btn ghost" id="rslip" style="width:100%">📄 ${t("slip")}</button></div>`:""}
   <div class="sec">
    ${form.askP?`<div class="step" id="st_s1"><h4>${n(1)}${t("s1")}</h4><p>${t("s1p")}</p><label class="drop"><input type="file" accept="image/*" multiple data-f="loadPics">${t("s1b")}</label>${thumbs(form.loadPics)}</div>`:`<div id="st_s1"></div>`}
    <div class="step ${recount?"warn":""}" id="st_s2"><h4>${n(2)}${recount?t("s2r"):t("s2")}</h4>
@@ -91,6 +92,7 @@ function drawReceive(){
  document.querySelectorAll("[data-f]").forEach(i=>i.onchange=()=>addFiles([...i.files],form[i.dataset.f]));
  document.querySelectorAll("[data-lf]").forEach(i=>i.onchange=()=>addFiles([...i.files],form.li[i.dataset.lf].label));
  document.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{form.cond=b.dataset.c;rd()});
+ const rs=$("rslip");if(rs)rs.onclick=async()=>{busy(true);try{openFile(await RCV.slip(curLines.find(x=>x.slip)))}catch(e){toast(e.message)}busy(false)};
  const ck=$("chk");if(ck){ck.onmousedown=e=>e.preventDefault();ck.onclick=()=>runCheck(false)}
 }
 /** Ask the server if the count matches. It answers which lines are off, never the expected numbers. 2 wrong checks max. */

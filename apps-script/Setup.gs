@@ -28,6 +28,7 @@ function setup(e) {
   Object.keys(TABLES).forEach(function (name) {
     var sh = ss.getSheetByName(name) || ss.insertSheet(name);
     var cols = TABLES[name];
+    if (sh.getMaxColumns() < cols.length) sh.insertColumnsAfter(sh.getMaxColumns(), cols.length - sh.getMaxColumns());
     sh.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold').setBackground('#16181a').setFontColor('#ffffff');
     sh.setFrozenRows(1);
   });
@@ -41,6 +42,8 @@ function setup(e) {
     var folder = (parent.hasNext() ? parent.next() : DriveApp.getRootFolder()).createFolder('PO Hub files');
     props.setProperty('ROOT_FOLDER_ID', folder.getId());
   }
+  // the upload folder exists before anyone uploads (two first uploads at once would otherwise create two folders)
+  try { incomingFolder_(); } catch (err) { Logger.log('Could not create _incoming: ' + err.message); }
   // Tootsi staff must be able to open photos and documents: view access for the whole domain (never "anyone")
   try { rootFolder_().setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW); } catch (err) { Logger.log('Could not share the files folder with the domain: ' + err.message); }
   var me = Session.getActiveUser().getEmail();
@@ -50,7 +53,9 @@ function setup(e) {
     HOLIDAYS: '2026-12-25,2026-12-28,2027-01-01,2027-04-02,2027-05-24,2027-06-24,2027-07-01,2027-09-06,2027-10-11',
     EMAIL_ON: 'no', PILOT_ONLY_ME: 'yes', FALLBACK_EMAIL: me, CC_ALWAYS: '', EMAIL_3PL: 'no',
     TEAM_Purchasing: '', TEAM_Logistics: '', TEAM_QC: '', TEAM_Receiving: '', TEAM_InventoryControl: me, TEAM_Fulfillment: '',
-    LANG_TP: 'fr', LANG_DL: 'fr', SESSION_HOURS: 12, GO_LIVE: today_(), HUB_URL: '', PORTAL_URL: '',
+    LANG_TP: 'fr', LANG_DL: 'fr', SESSION_HOURS: 12, GO_LIVE: today_(), COMPARE_LB: 'no',
+    SLIP_LOG_ID: '' /* Arash's "Packing Slip Extractor Log" spreadsheet id */, SLIP_TAB: 'PO Status', SLIP_TO_3PL: 'yes',
+    MASTER_SHEET_ID: '' /* third_party_whse master id */, MASTER_TAB: '3PL', MASTER_MODE: 'preview', HUB_URL: '', PORTAL_URL: '',
     UPCOMING_SHEET_ID: '' /* paste the ID of the UPCOMING FTL FCL sheet */, UPCOMING_TAB: 'UPCOMING FTL FCL', DIGEST_TO: me
   };
   var have = config_();
@@ -105,7 +110,7 @@ function installTriggers(e) {
   requireOwner_(e);
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('dailyJob').timeBased().atHour(7).nearMinute(40).everyDays(1).inTimezone('America/Toronto').create();
-  ScriptApp.newTrigger('importUpcoming').timeBased().everyHours(2).create();
+  ScriptApp.newTrigger('syncSources').timeBased().everyHours(1).create();
 }
 
 function toastSafe_(m) { try { SpreadsheetApp.getActiveSpreadsheet().toast(m, 'PO Hub', 8); } catch (e) {} }

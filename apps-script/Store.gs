@@ -15,6 +15,9 @@ var TABLES = {
   Users: ['token','wh','name','email','active','user','salt','passHash','lastLogin'],
   Sessions: ['sid','token','expires','at'],
   Checks: ['key','at','by','off','countJson'],
+  Slips: ['po','status','url','fileId','source','action','checked'],
+  MasterSync: ['key','at','po','item','wh','field','value','status','row'],
+  MasterSeen: ['id','recv','row','checked'],
   Config: ['key','value'],
   Log: ['at','who','action','id','detail']
 };
@@ -63,7 +66,7 @@ function normalize_(col, v) {
   return v === null ? '' : v;
 }
 
-var TEXT_COLS_ = /^(id|po|item|lot|token|user|salt|passHash|sid|subId|delayId|ship|eta|clockFrom|recv|exp|qcAt|relAt|sap|newDate|date|opened|nudged|from|cntr|so|key|value|closed|manual)$/;
+var TEXT_COLS_ = /^(field|row|status|source|action|checked|fileId|url|id|po|item|lot|token|user|salt|passHash|sid|subId|delayId|ship|eta|clockFrom|recv|exp|qcAt|relAt|sap|newDate|date|opened|nudged|from|cntr|so|key|value|closed|manual)$/;
 /**
  * Turn an object into a sheet row.
  * Every piece of text gets a leading apostrophe: Sheets then stores it exactly as typed.
@@ -155,6 +158,11 @@ function checkFile_(f) {
   var type = String(f.type || ''), data = String(f.data).split(',').pop();
   if (!/^image\/(jpeg|png|webp|heic|heif|gif)$/.test(type) && type !== 'application/pdf') throw new Error('Only photos and PDF files can be added.');
   if (data.length > 14000000) throw new Error('File too large (10 MB max).');
+  // the first bytes must really be a photo or a PDF (a renamed web page or program is refused)
+  var head = Utilities.base64Decode(data.slice(0, 24)).slice(0, 12).map(function (b) { return b & 255; });
+  var hex = head.map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+  var okMagic = /^ffd8ff/.test(hex) || /^89504e47/.test(hex) || /^25504446/.test(hex) || /^47494638/.test(hex) || (/^52494646/.test(hex) && hex.slice(16, 24) === '57454250') || hex.slice(8, 16) === '66747970';
+  if (!okMagic) throw new Error('Only photos and PDF files can be added.');
   return { name: String(f.name || 'file').replace(/[\\/:*?"<>|]/g, '_').slice(0, 120), type: type, data: data };
 }
 function saveFile_(id, f) {
@@ -163,26 +171,52 @@ function saveFile_(id, f) {
   shareDomain_(file);
   return { name: file.getName(), url: file.getUrl(), fileId: file.getId() };
 }
-/** Uploads land first in "PO Hub files/_incoming", named "<warehouse>__<name>". The browser only gets the file id. */
-function incomingFolder_() { var root = rootFolder_(), it = root.getFoldersByName('_incoming'); return it.hasNext() ? it.next() : root.createFolder('_incoming'); }
+/** Uploads land first in "PO Hub files/_incoming", named "<warehouse>__<name>". The browser only gets the file id.
+ *  The folder is created by setup() and its id kept, so two uploads at the same time never create two folders. */
+function incomingFolder_() {
+  var props = PropertiesService.getScriptProperties(), id = props.getProperty('INCOMING_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  return withLock_(function () {
+    var root = rootFolder_(), it = root.getFoldersByName('_incoming'), f = it.hasNext() ? it.next() : root.createFolder('_incoming');
+    props.setProperty('INCOMING_ID', f.getId()); return f;
+  });
+}
 function saveIncoming_(who, f) {
   var file = incomingFolder_().createFile(Utilities.newBlob(Utilities.base64Decode(f.data), f.type, who + '__' + f.name));
   return { fid: file.getId(), name: f.name };
 }
-/** On submit: check the file was uploaded by the same warehouse, then move it into the PO folder. */
-function takeFile_(fid, who, poId) {
+/** Before saving a receipt: the file must exist and must have been uploaded by this same warehouse. Nothing moves yet. */
+function verifyFile_(fid, who) {
   var file;
   try { file = DriveApp.getFileById(String(fid)); } catch (e) { throw new Error('A photo was not uploaded. Please add it again.'); }
-  var inc = incomingFolder_().getId(), parents = file.getParents(), ok = false;
-  while (parents.hasNext()) if (parents.next().getId() === inc) ok = true;
-  var pre = who + '__';
-  if (!ok || file.getName().indexOf(pre) !== 0) throw new Error('A photo was not uploaded. Please add it again.');
-  file.setName(file.getName().slice(pre.length));
-  file.moveTo(poFolder_(poId));
-  shareDomain_(file);
-  return { name: file.getName(), url: file.getUrl(), fileId: file.getId() };
+  var pre = who + '__', name = file.getName();
+  if (name.indexOf(pre) !== 0) throw new Error('A photo was not uploaded. Please add it again.');
+  return { name: name.slice(pre.length), url: file.getUrl() };
 }
-
+/** After the receipt is saved (outside the lock): move each photo into its PO folder, drop the prefix, share with Tootsi.
+ *  The saved link stays valid even if a move fails; the file then simply stays in _incoming. */
+function finishMoves_(moves) {
+  (moves || []).forEach(function (m) {
+    try {
+      var file = DriveApp.getFileById(m.fid), pre = m.who + '__';
+      file.moveTo(poFolder_(m.poId));
+      if (file.getName().indexOf(pre) === 0) file.setName(file.getName().slice(pre.length));
+      shareDomain_(file);
+    } catch (e) { Logger.log('Could not move ' + m.fid + ': ' + e.message); }
+  });
+}
+/** Daily: uploads never used in a receipt (older than 3 days) go to the trash. */
+/** A packing slip PDF for the 3PL portal (the 3PL has no Google account, so the server sends the file itself). */
+function slipFile_(fileId) {
+  var blob = DriveApp.getFileById(String(fileId)).getBlob();
+  if (blob.getBytes().length > 8000000) throw new Error('Packing slip too large to open here.');
+  return { name: blob.getName() || 'packing-slip.pdf', type: blob.getContentType() || 'application/pdf', data: Utilities.base64Encode(blob.getBytes()) };
+}
+function cleanIncoming_() {
+  var it = incomingFolder_().getFiles(), old = new Date(Date.now() - 3 * 864e5), n = 0;
+  while (it.hasNext()) { var f = it.next(); if (f.getDateCreated() < old) { f.setTrashed(true); n++; } }
+  return n;
+}
 function logAction_(who, action, id, detail) {
   append_('Log', { at: nowStamp_(), who: who, action: action, id: id || '', detail: detail || '' });
 }

@@ -80,6 +80,7 @@ async def main():
     ok("email alert drafted (pilot: only to Juan)", mail and all(m["to"]=="juan@tootsi.com" for m in mail), mail[:2])
     # ---------- container with 4 items: one receiving, pallets counted once ----------
     await pg.click("#nextd"); await pg.wait_for_timeout(1200)
+    ok("packing slip button on the container card", await pg.locator(".pocard:has-text('OOLU5550001') [data-slip]").count()==1)
     ok("container shows as ONE card with 4 items", await pg.locator(".po:has-text('OOLU5550001')").count()==1 and "4 articles" in await pg.inner_text("main"))
     await pg.locator(".po:has-text('OOLU5550001')").click(); await pg.wait_for_timeout(500)
     ok("form lists the 4 items", await pg.locator('[id^="c_90410"]').count()==4)
@@ -96,7 +97,10 @@ async def main():
     await pg.click("#send"); await pg.wait_for_timeout(1500)
     db=await pg.evaluate("MOCK().MOCK_DB()")
     subs=[x for x in db["Submissions"] if str(x["id"]).startswith("90410|")]
-    ok("one send saved all 4 items", len(subs)==4 and all(str(x["plt"])=="21" and str(x["grpPlt"])=="21" for x in subs), subs[:1])
+    ok("one send saved all 4 items", len(subs)==4, len(subs))
+    ok("pallet count sits on ONE line of the container (one issue, one claim)", sum(1 for x in subs if str(x["plt"])=="21" and str(x["grpPlt"])=="21")==1 and sum(1 for x in subs if str(x["plt"])=="")==3, [(x["plt"],x["grpPlt"]) for x in subs])
+    mq=[x for x in db.get("MasterSync",[]) if str(x["po"])=="90410"]
+    ok("receipt queued for the master sheet (preview, empty cells only)", len(mq)>=4*5 and all(x["status"]=="pending" for x in mq), len(mq))
     ok("shared photos on every item, label per item", all(len(x["filesJson"])==3 for x in subs), [len(x["filesJson"]) for x in subs])
     ok("no false pallet issue on the container", not [x for x in db["Issues"] if str(x["id"]).startswith("90410|") and x.get("status")=="Open"])
     sid=await pg.evaluate("localStorage.getItem('tootsi_3pl_session')")
@@ -106,6 +110,12 @@ async def main():
     ok("3rd wrong check is refused (server-side limit)", rs[0].get("match") is False and rs[2].get("limit") is True, rs)
     fake=await pg.evaluate("s=>new Promise(r=>google.script.run.withSuccessHandler(x=>r('LEAK')).withFailureHandler(e=>r(e.message)).portalSubmitShip(s,'90101|10201',{recv:'2026-11-23',plt:28,cond:'Good',load:['inc999'],doc:['inc999'],lines:[{id:'90101|10201',cs:1100,lot:'x',exp:'2027-01-01',label:['inc999']}]}))",sid)
     ok("a file id from someone else is refused", fake!="LEAK", fake)
+    priv=await pg.evaluate("new Promise(r=>google.script.run.withSuccessHandler(x=>r('LEAK')).withFailureHandler(e=>r(e.message)).readAll_('Users'))")
+    ok("browser cannot call internal functions (names ending in _)", priv!="LEAK", priv)
+    slip=await pg.evaluate("s=>new Promise(r=>google.script.run.withSuccessHandler(x=>r(x.type)).withFailureHandler(e=>r(e.message)).portalSlip(s,'90410|80450'))",sid)
+    ok("3PL can open the packing slip of its own PO", slip=="application/pdf", slip)
+    slip2=await pg.evaluate("s=>new Promise(r=>google.script.run.withSuccessHandler(x=>r('LEAK')).withFailureHandler(e=>r(e.message)).portalSlip(s,'90203|14015'))",sid)
+    ok("3PL cannot open another warehouse's packing slip", slip2!="LEAK", slip2)
     await pg.click("#nextd") if await pg.locator("#nextd").count() else None
     # ---------- hub ----------
     hub=await ctx.new_page(); hub.on("pageerror",lambda e:errs.append("hub "+str(e)))
@@ -165,7 +175,7 @@ async def main():
     ok("DL sees only DL POs", sorted(pos)==["90203","90204"], pos)
     await pg.reload(); await pg.wait_for_timeout(1200)
     ok("session stays after reload (same shift)", "Deslauriers" in await pg.inner_text("main"))
-    await pg.evaluate("(()=>{const k='pohub_gws_preview_v3',d=JSON.parse(localStorage.getItem(k));d.Sessions.forEach(s=>s.expires=1);localStorage.setItem(k,JSON.stringify(d))})()")
+    await pg.evaluate("(()=>{const k='pohub_gws_preview_v4',d=JSON.parse(localStorage.getItem(k));d.Sessions.forEach(s=>s.expires=1);localStorage.setItem(k,JSON.stringify(d))})()")
     await pg.reload(); await pg.wait_for_timeout(2500)
     ok("expired session goes back to sign-in", await pg.locator("#lg_u").is_visible() and "session" in (await pg.inner_text("#lg_err")).lower(), [await pg.locator("#lg_u").count(), await pg.inner_text("body")][:2])
     await pg.goto(P+"3pl.html"); await pg.wait_for_timeout(600)
