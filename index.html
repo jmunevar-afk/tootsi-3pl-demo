@@ -203,7 +203,7 @@ const ISSUES={"90203":{type:"Short ship + damage",owner:"Purchasing",status:"Ope
 const NOTES={"90203":[{who:"Purchasing",text:"Sent photos and counts to supplier. Waiting for their loading report.",at:"Nov 22, 2026 16:02"},{who:"QC",text:"Lot locked until the claim is decided.",at:"Nov 23, 2026 08:15"}]};
 const REQ={}; // recount requests from Tootsi to the 3PL
 const PL={"90201":{plt:20,cs:1600,lbs:40000,by:"Purchasing"},"90203":{plt:20,cs:1600,lbs:44096,by:"Purchasing"},"90301":{plt:22,cs:1680,lbs:41580,by:"Purchasing"}};
-const SUB={"90203":{by:"DL receiver",at:"Nov 22, 2026 14:10",recv:"2026-11-22",plt:20,cs:1580,lbs:43545,first:{plt:20,cs:1578,lbs:43490},recount:true,diffNote:"Recounted twice. 20 cases missing.",label:[],doc:[],loadPics:[],cond:"Torn / leaking bags",damage:true,dmgText:"2 bags torn on bottom of pallet 7, product spilled.",dmgPics:[],demo:true}};
+const SUB={"90203":{by:"DL receiver",at:"Nov 22, 2026 14:10",recv:"2026-11-22",plt:20,cs:1580,lbs:43545,first:{plt:20,cs:1578,lbs:43490},recount:true,diffNote:"Recounted twice. 20 cases missing.",label:[],doc:[],loadPics:[],cond:"Torn / leaking bags",damage:true,dmgText:"2 bags torn on bottom of pallet 7, product spilled.",dmgPics:[],demo:true,comment:"Container arrived with seal intact. Bags on the bottom row were crushed by the bags above."}};
 const INT={"90201":[{cat:"Supplier packing list",name:"packing_list_90201.pdf",by:"Purchasing",at:"Nov 20, 2026"}],
  "90203":[{cat:"Supplier packing list",name:"packing_list_90203.pdf",by:"Purchasing",at:"Nov 18, 2026"},{cat:"Supplier loading report",name:"loading_report_90203.pdf",by:"Purchasing",at:"Nov 21, 2026"}],
  "90301":[{cat:"Supplier packing list",name:"packing_list_90301.pdf",by:"Purchasing",at:"Nov 21, 2026"}]};
@@ -287,7 +287,7 @@ function render3pl(){
 let form;
 function openReceive(po){
  const s=SUB[po];
- form=s?{...s,legible:true}:{recv:TODAY,plt:"",cs:"",lbs:"",label:[],doc:[],loadPics:[],cond:"",dmgText:"",dmgPics:[],legible:false,rplt:"",rcs:"",rlbs:"",diffNote:""};
+ form=s?{...s,legible:true}:{recv:TODAY,plt:"",cs:"",lbs:"",label:[],doc:[],loadPics:[],cond:"",dmgText:"",dmgPics:[],legible:false,rplt:"",rcs:"",rlbs:"",diffNote:"",comment:""};
  drawReceive(po,!!s);
 }
 function thumbs(arr){return `<div class="thumbs">${arr.map(f=>f.type?.startsWith("image")?`<img src="${f.url}" alt="">`:`<div class="file">📄 ${esc(f.name)}</div>`).join("")}</div>`}
@@ -318,7 +318,7 @@ function drawReceive(po,ro){
    <span class="k">Shipment</span><span>${esc(p.load)}</span>
    <span class="k">Container</span><span class="mono">${p.cntr||"—"}</span>
   </div></div>
-  ${ro?`<div class="sec"><div class="note">Sent on ${esc(s.at)} by ${esc(s.by)}. Received ${fmt(s.plt)} plt · ${fmt(s.cs)} cs · ${fmt(s.lbs)} lb${s.recount?" (after recount)":""}. Contact Tootsi ${who} to make a change.</div></div>`:""}
+  ${ro?`<div class="sec"><div class="note">Sent on ${esc(s.at)} by ${esc(s.by)}. Received ${fmt(s.plt)} plt · ${fmt(s.cs)} cs · ${fmt(s.lbs)} lb${s.recount?" (after recount)":""}. Contact Tootsi ${who} to make a change.</div>${s.comment?`<div class="note" style="margin-top:8px"><b>Your comment:</b> ${esc(s.comment)}</div>`:""}</div>`:""}
   ${ro?"":`<div class="sec"><h3>Receiving · 5 steps</h3>
    <div class="step ${form.loadPics.length?"ok":""}"><h4>${n(1)}Photo of the load before unloading</h4>
     <p>Open the trailer or container and take a photo before touching anything. This is our proof of how the supplier loaded it.</p>
@@ -359,6 +359,11 @@ function drawReceive(po,ro){
     ${bad?`<div style="margin-top:10px"><textarea id="f_dmg" rows="3" placeholder="Short explanation: what, how many, where (e.g. 3 bags torn on pallet 4, product spilled)">${esc(form.dmgText)}</textarea>
      <label class="drop" style="margin-top:8px"><input type="file" accept="image/*" capture="environment" multiple data-f="dmgPics">📷 Add damage photos</label>${thumbs(form.dmgPics)}</div>`:""}
    </div>
+   <div class="step"><h4><span class="num" style="background:#8a8f94">💬</span>Comments for Tootsi <span style="font-weight:400;color:var(--muted);font-size:12px">· optional</span></h4>
+    <p>Anything we should know: delays, seal number, driver notes, questions for Purchasing.</p>
+    <textarea id="f_com" rows="3" maxlength="500" placeholder="e.g. Truck arrived 2 h late. Seal intact. Pallet 12 was wrapped loosely.">${esc(form.comment)}</textarea>
+    <div style="text-align:right;font-size:11px;color:var(--muted);margin-top:4px"><span id="f_cc">${form.comment.length}</span>/500</div>
+   </div>
    <button class="btn" id="send" style="width:100%;margin-top:6px" ${ready?"":"disabled"}>${ready?"Send to Tootsi":!form.loadPics.length?"Add the load photo to continue":!okQty?"Enter your count to continue":!okRe?"Enter your recount to continue":!okNote?"Explain the difference to continue":"Complete all steps to send"}</button>
   </div>`}
  </div>`);
@@ -370,12 +375,14 @@ function drawReceive(po,ro){
  document.querySelectorAll("[data-f]").forEach(i=>i.onchange=()=>{[...i.files].forEach(f=>form[i.dataset.f].push({name:f.name,type:f.type,url:URL.createObjectURL(f)}));rd()});
  document.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{form.cond=b.dataset.c;rd()});
  const t=$("f_dmg");if(t){t.oninput=e=>{form.dmgText=e.target.value};t.onchange=rd}
+ const cm=$("f_com");cm.oninput=e=>{form.comment=e.target.value;$("f_cc").textContent=form.comment.length};
  const nt=$("f_note");if(nt){nt.oninput=e=>{form.diffNote=e.target.value};nt.onchange=rd}
  $("send").onclick=()=>{
   const final=needRecount?re:first;
   SUB[po]={recv:form.recv,plt:final.plt,cs:final.cs,lbs:final.lbs,first:needRecount?first:null,recount:needRecount,diffNote:needNote?form.diffNote:"",
    label:form.label,doc:form.doc,loadPics:form.loadPics,cond:form.cond,damage:bad,dmgText:bad?form.dmgText:"",dmgPics:bad?form.dmgPics:[],
-   by:isTPL(p.wh)?ROLES[role].name:"Tootsi receiving ("+p.wh+")",at:now(),prev:rq?rq.prev:null};
+   by:isTPL(p.wh)?ROLES[role].name:"Tootsi receiving ("+p.wh+")",at:now(),prev:rq?rq.prev:null,comment:form.comment.trim()};
+  if(SUB[po].comment)(NOTES[po]||(NOTES[po]=[])).push({who:SUB[po].by,text:SUB[po].comment,at:SUB[po].at,ext:isTPL(p.wh)});
   if(rq)delete REQ[po];
   if(full.x.qc==="Not received")full.x.qc="Locked";
   closeD();tab="done";render();
@@ -428,7 +435,7 @@ function renderTootsi(){
   <td>${p.item}<div style="color:var(--muted);font-size:12px">${esc(p.desc)}</div></td>
   <td style="white-space:nowrap">${fd(p.eta)}</td>
   <td style="font-size:12.5px;white-space:nowrap">${p.plt} plt · ${fmt(p.cs)} cs<br><span style="color:var(--muted)">${fmt(p.lbs)} lb</span></td>
-  <td>${statusPill(p)}<div style="margin-top:4px">${qcPill(p.x.qc)}</div></td>
+  <td>${statusPill(p)}<div style="margin-top:4px">${qcPill(p.x.qc)}</div>${SUB[p.po]?.comment?`<div style="font-size:11.5px;color:var(--blue);margin-top:4px" title="${esc(SUB[p.po].comment)}">💬 3PL comment</div>`:""}</td>
   <td>${allocPill(p.x)}${p.x.so?`<div style="font-size:11.5px;color:var(--muted);margin-top:3px">${esc(p.x.so)}</div>`:""}</td>
   <td><span class="pill ${qs.cls}">${qs.t}</span></td>
   <td style="font-size:12px">${is?`<b style="color:var(--red)">${esc(is.owner)}</b><div style="color:var(--muted)">open ${ageDays(is.opened)} d</div>`:"—"}</td></tr>`}).join(""):`<tr><td colspan="9" class="note" style="text-align:center">No POs match.</td></tr>`}
@@ -488,7 +495,7 @@ function claimText(p){
  const counts=1+(s?.first?1:0)+(s?.prev?1:0);
  if(s)L.push(`  Counted ${counts} time(s).`);
  L.push("");
- if(s){L.push(`Load condition: ${s.cond||"—"}`);if(s.damage)L.push(`Damage: ${s.dmgText}`);if(s.diffNote)L.push(`Receiver note: ${s.diffNote}`)}
+ if(s){L.push(`Load condition: ${s.cond||"—"}`);if(s.damage)L.push(`Damage: ${s.dmgText}`);if(s.diffNote)L.push(`Receiver note: ${s.diffNote}`);if(s.comment)L.push(`Receiver comment: ${s.comment}`)}
  L.push("");
  L.push(`Supplier conditions on PO: ${p.x.instr||"—"}`);
  L.push("");
@@ -558,7 +565,8 @@ function openInternal(po){
 
   <div class="sec"><h3>Receiving at ${p.wh}</h3>
    ${s?`<div class="grid2" style="margin-bottom:10px"><span class="k">Received</span><span>${fd(s.recv)}</span><span class="k">Sent by</span><span>${esc(s.by)} · ${esc(s.at)}</span><span class="k">Load condition</span><span style="${s.cond&&s.cond!=="Good"?"color:var(--red)":""}">${esc(s.cond||"—")}</span>
-   ${s.damage?`<span class="k" style="color:var(--red)">Damage</span><span style="color:var(--red)">${esc(s.dmgText)}</span>`:""}</div>`:""}
+   ${s.damage?`<span class="k" style="color:var(--red)">Damage</span><span style="color:var(--red)">${esc(s.dmgText)}</span>`:""}
+   ${s.comment?`<span class="k">💬 Comment</span><span>${esc(s.comment)}</span>`:""}</div>`:""}
    ${fileList(evidence(p),isTPL(p.wh)?`${p.wh} has not sent the receiving info yet.`:"Not received yet.")}
   </div>
 
@@ -574,7 +582,7 @@ function openInternal(po){
   </div>
 
   <div class="sec"><h3>Notes <span class="tag">replaces back-and-forth emails</span></h3>
-   ${notes.length?notes.map(n=>`<div class="msg"><b>${esc(n.who)}</b> <span>${esc(n.at)}</span><div>${esc(n.text)}</div></div>`).join(""):`<div class="note">No notes yet.</div>`}
+   ${notes.length?notes.map(n=>`<div class="msg" ${n.ext?'style="border-left-color:var(--blue)"':""}><b>${esc(n.who)}</b>${n.ext?' <span class="pill p-todo" style="font-size:10.5px;padding:1px 7px">3PL</span>':""} <span>${esc(n.at)}</span><div>${esc(n.text)}</div></div>`).join(""):`<div class="note">No notes yet.</div>`}
    <div style="display:flex;gap:8px;margin-top:8px"><input class="in" id="n_txt" placeholder="Write a note for everyone on this PO…"><button class="btn" id="n_add">Post</button></div>
   </div>
  </div>`);
