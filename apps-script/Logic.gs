@@ -11,7 +11,21 @@ function isTPL(w) { return TPL_WH.indexOf(w) >= 0; }
 /** A shipment = what arrives together: one container, or one PO when there is no container number. */
 function shipKey(p) { return (p.wh || '?') + '|' + (p.cntr ? 'C:' + p.cntr : 'P:' + p.po); }
 /** True while nothing of the shipment has been received: pallets are counted once, on that first receiving. */
-function shipFresh(p, st) { return !shipLines(p, st).some(function (x) { return isDone(x, st); }); }
+/** Nothing of the shipment was ever received (a recount does not make it fresh again). */
+function shipFresh(p, st) { return !shipLines(p, st).some(function (x) { return isDone(x, st) || (st.hist[x.id] || []).length > 0; }); }
+/** Pallets are counted on the first receiving of a shipment, and again when the line that holds the pallet count is recounted.
+ *  ONE rule, used by the server checks AND by the 3PL / hub screens. */
+function shipAskP(p, st) {
+  if (shipFresh(p, st)) return true;
+  return shipLines(p, st).some(function (x) { return x.wh === p.wh && !isDone(x, st) && (st.hist[x.id] || []).some(function (s) { return s.plt !== '' && s.plt != null; }); });
+}
+/** The supplier packing slip shows the expected cartons, so a 3PL sees it only AFTER sending its own count (SLIP_TO_3PL = after),
+ *  never (no), or always (yes: breaks the blind count). */
+function slipFor3pl(p, st, ctx) {
+  var mode = String(ctx.cfg.SLIP_TO_3PL || 'after'), s = st.slip[p.po];
+  if (!s || s.status !== 'FOUND' || !s.fileId || mode === 'no') return false;
+  return mode === 'yes' || !!st.sub[p.id];
+}
 function isDone(p, st) { return !!st.sub[p.id] || !!p.closed; }
 /** Lines of the same shipment (same warehouse and container, or same PO). */
 function shipLines(p, st) { var k = shipKey(p); return st.pos.filter(function (x) { return shipKey(x) === k && !(x.unplannedJson && !truthy(x.planOk)); }); }
@@ -104,6 +118,8 @@ function issueState(p, st, ctx) {
   if (unpl) { types.push('Arrived at ' + p.wh + ', not on the upcoming list'); owner = 'Logistics'; urgent = true; opened = p.eta; }
   if (pl && !s && diffs(p, pl, ctx).length) types.push('Packing list ≠ PO (' + gapText(p, pl, ctx) + ')');
   if (s && diffs(p, s, ctx).length) types.push(gapText(p, s, ctx));
+  var lastH = (st.hist[p.id] || []).slice(-1)[0];
+  if (!s && st.req[p.id] && lastH && diffs(p, lastH, ctx).length) types.push(gapText(p, lastH, ctx) + ' (recount asked)');
   else if (s && num(s.cs) === 0 && num(p.cs) == null) types.push('Item did not arrive (0 cs counted)');
   var hist = st.hist[p.id] || [];
   if ((s && s.damage) || hist.some(function (h) { return h.damage; })) { types.push('damage'); urgent = true; }
@@ -187,7 +203,7 @@ function needsAction(p, st, ctx) {
   if (is && issueOverdue(is, ctx)) a.push({ t: 'Overdue: ' + is.owner, u: true });
   else if (is && !dl && !(sl && (sl.lvl === 'nudge' || sl.lvl === 'esc')) && !(p.unplannedJson && !truthy(p.planOk))) a.push({ t: 'Issue · ' + is.owner });
   if (notInSap(p, st, ctx)) a.push({ t: 'Enter in SAP' });
-  if (!s && st.mseen[p.id]) a.push({ t: 'Master sheet shows received ' + st.mseen[p.id].recv + ' · confirm', u: true });
+  if (!s && st.mseen[p.id]) a.push({ t: 'Master sheet: received ' + st.mseen[p.id].recv + ' (units entered) · confirm', u: true });
   var sl = st.slip[p.po];
   if (!s && (!sl || sl.status !== 'FOUND') && p.eta && daysBetween(ctx.today, p.eta) <= 7 && !p.unplannedJson) a.push({ t: 'Packing slip missing' });
   if (!s && p.wh && num(p.cs) == null && !p.unplannedJson) a.push({ t: 'Add expected cases (not compared yet)' });
@@ -237,13 +253,15 @@ function claimText(p, st, ctx) {
   var s = st.sub[p.id], pl = st.pl[p.id], lr = st.lr[p.id], c = countsList(p, st), is = st.issue[p.id];
   var ev = filesOf(p, st).concat((st.docs[p.id] || []).map(function (d) { return { cat: d.cat, name: d.name }; }));
   var q = function (z) { return z.plt + ' plt / ' + z.cs + ' cs / ' + (z.lbs === '' || z.lbs == null ? '— lb (from photos / SAP)' : z.lbs + ' lb'); };
-  var o = ['CLAIM / NCR SUMMARY · PO ' + p.po + (p.item ? ' · item ' + p.item : ''), 'Supplier: ' + p.supplier, 'Item: ' + p.item + ' ' + p.desc + (s && s.lot ? ' · Lot ' + s.lot : '') + (s && s.exp ? ' · Exp ' + s.exp : ''),
+  var sl = shipLines(p, st), holder = s && s.grpPlt !== '' && s.grpPlt != null;
+  var o = ['CLAIM / NCR SUMMARY · PO ' + p.po + (p.item ? ' · item ' + p.item : ''), 'Supplier: ' + p.supplier,
+    sl.length > 1 ? 'Shipment: ' + (p.cntr ? 'container ' + p.cntr : 'PO ' + p.po) + ' · ' + sl.length + ' items' + (holder ? ' · the pallet count below is for the WHOLE shipment (' + s.grpPlt + ' expected)' : '') : '', 'Item: ' + p.item + ' ' + p.desc + (s && s.lot ? ' · Lot ' + s.lot : '') + (s && s.exp ? ' · Exp ' + s.exp : ''),
     'Received at: ' + p.wh + ' on ' + (s ? s.recv : '(not yet)') + (p.cntr ? ' · Container ' + p.cntr : '') + ' · ' + p.load, '', 'Quantities', '  PO:              ' + q(p)];
   if (pl) o.push('  Packing list:    ' + q(pl));
   if (lr) o.push('  Loading report:  ' + q(lr));
   c.forEach(function (z) { o.push('  ' + z.l + ': ' + q(z.v) + ' (' + z.by + ')'); });
   if (s && diffs(p, s, ctx).length) o.push('  Result: ' + gapText(p, s, ctx) + ' vs PO');
-  o.push('  Physical counts: ' + c.length + ' of 3 required by Purchasing' + (c.length < 3 ? ' (ask for another count before sending)' : ''), '');
+  o.push('  Physical counts: ' + c.length + ' of 3 required by Purchasing (first count and recount by the 3PL count as 2)' + (c.length < 3 ? ' (ask for another count before sending)' : ''), '');
   (st.hist[p.id] || []).forEach(function (h, i) { o.push('Submission ' + (i + 1) + ' (' + h.by + ', ' + h.recv + '): condition ' + h.cond + (h.damage ? ' · ' + h.dmgText : '')); });
   if (s) { o.push('Load condition on arrival: ' + s.cond); if (s.damage) o.push('Damage: ' + s.dmgText); if (s.diffNote) o.push('Receiver note: ' + s.diffNote); if (s.comment) o.push('Receiver comment: ' + s.comment); }
   if (is && is.decision && is.decision !== 'Pending') o.push('Dock decision: ' + is.decision + (is.decisionNote ? ' · ' + is.decisionNote : ''));
@@ -281,7 +299,7 @@ function hubDetail(p, st, ctx) {
   same.forEach(function (x) { r.docs = r.docs.concat(st.docs[x.id] || []); r.notes = r.notes.concat(st.notes[x.id] || []); });
   r.notes.sort(function (a, b) { return String(a.at) < String(b.at) ? -1 : 1; });
   r.lines = shipLines(p, st).map(function (x) { return { id: x.id, po: x.po, item: x.item, desc: x.desc, cs: x.cs, lbs: x.lbs, done: isDone(x, st), sub: st.sub[x.id] ? { cs: st.sub[x.id].cs, lot: st.sub[x.id].lot } : null }; });
-  r.shipPlt = shipPallets(shipLines(p, st)); r.askP = shipFresh(p, st);
+  r.shipPlt = shipPallets(shipLines(p, st)); r.askP = shipAskP(p, st); r.fresh = shipFresh(p, st);
   r.claim = (st.sub[p.id] || (st.hist[p.id] || []).length) ? claimText(p, st, ctx) : '';
   return r;
 }
@@ -290,8 +308,8 @@ function hubDetail(p, st, ctx) {
 function portalRow(p, st, ctx) {
   var s = st.sub[p.id], sl = sla(p, st, ctx), dl = st.delay[p.id];
   return {
-    id: p.id, ship: shipKey(p), askP: shipFresh(p, st), shipPlt: shipPallets(shipLines(p, st)), po: p.po, item: p.item, desc: p.desc, eta: p.eta, cntr: p.cntr, plt: p.plt, load: p.load, floor: isFloor(p), instr: p.tplInstr || '',
-    sla: sl ? { lvl: sl.lvl } : null, req: !!st.req[p.id], slip: !!(st.slip[p.po] && st.slip[p.po].status === 'FOUND' && st.slip[p.po].fileId && String(ctx.cfg.SLIP_TO_3PL || 'yes') === 'yes'),
+    id: p.id, ship: shipKey(p), askP: shipAskP(p, st), fresh: shipFresh(p, st), shipPlt: shipPallets(shipLines(p, st)), po: p.po, item: p.item, desc: p.desc, eta: p.eta, cntr: p.cntr, plt: p.plt, load: p.load, floor: isFloor(p), instr: p.tplInstr || '',
+    sla: sl ? { lvl: sl.lvl } : null, req: !!st.req[p.id], slip: slipFor3pl(p, st, ctx),
     delay: dl ? { reason: dl.reason, newDate: dl.newDate } : null,
     sent: s ? { recv: s.recv, at: s.at, plt: s.plt, cs: s.cs, lbs: s.lbs, first: s.firstJson, diffNote: s.diffNote, lot: s.lot, exp: s.exp, cond: s.cond, damage: truthy(s.damage), dmgText: s.dmgText, comment: s.comment,
       files: (s.filesJson || []).map(function (f) { return { cat: f.cat, name: f.name }; }) } : null

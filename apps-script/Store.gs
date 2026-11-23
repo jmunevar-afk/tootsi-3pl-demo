@@ -9,7 +9,7 @@ var TABLES = {
   Issues: ['id','type','owner','ownerManual','status','opened','urgent','urgentManual','openManual','decision','decisionNote','updatedAt'],
   Notes: ['id','who','text','at','ext'],
   Delays: ['delayId','id','reason','note','newDate','by','at','date','closedAt','filesJson'],
-  Recounts: ['id','at','from','active'],
+  Recounts: ['id','at','from','active','base'],
   Docs: ['id','cat','name','url','by','at'],
   SupplierQty: ['id','kind','plt','cs','lbs','by','at'],
   Users: ['token','wh','name','email','active','user','salt','passHash','lastLogin'],
@@ -189,8 +189,9 @@ function saveIncoming_(who, f) {
 function verifyFile_(fid, who) {
   var file;
   try { file = DriveApp.getFileById(String(fid)); } catch (e) { throw new Error('A photo was not uploaded. Please add it again.'); }
-  var pre = who + '__', name = file.getName();
-  if (name.indexOf(pre) !== 0) throw new Error('A photo was not uploaded. Please add it again.');
+  var pre = who + '__', name = file.getName(), inc = incomingFolder_().getId(), ok = false, ps = file.getParents();
+  while (ps.hasNext()) if (ps.next().getId() === inc) ok = true;
+  if (!ok || file.isTrashed() || name.indexOf(pre) !== 0) throw new Error('A photo was not uploaded. Please add it again.');
   return { name: name.slice(pre.length), url: file.getUrl() };
 }
 /** After the receipt is saved (outside the lock): move each photo into its PO folder, drop the prefix, share with Tootsi.
@@ -209,12 +210,19 @@ function finishMoves_(moves) {
 /** A packing slip PDF for the 3PL portal (the 3PL has no Google account, so the server sends the file itself). */
 function slipFile_(fileId) {
   var blob = DriveApp.getFileById(String(fileId)).getBlob();
-  if (blob.getBytes().length > 8000000) throw new Error('Packing slip too large to open here.');
+  if (blob.getBytes().length > 4000000) throw new Error('Packing slip too large to open here. Ask Tootsi to email it.');
   return { name: blob.getName() || 'packing-slip.pdf', type: blob.getContentType() || 'application/pdf', data: Utilities.base64Encode(blob.getBytes()) };
 }
 function cleanIncoming_() {
-  var it = incomingFolder_().getFiles(), old = new Date(Date.now() - 3 * 864e5), n = 0;
-  while (it.hasNext()) { var f = it.next(); if (f.getDateCreated() < old) { f.setTrashed(true); n++; } }
+  var linked = {};
+  readAll_('Submissions').forEach(function (s) { (s.filesJson || []).forEach(function (f) { if (f.fileId) linked[f.fileId] = s.id; }); });
+  var it = incomingFolder_().getFiles(), old = new Date(Date.now() - 3 * 864e5), n = 0, retry = [];
+  while (it.hasNext()) {
+    var f = it.next(), id = f.getId();
+    if (linked[id]) { retry.push({ fid: id, who: f.getName().split('__')[0], poId: linked[id] }); continue; } // part of a receipt: move it, never trash it
+    if (f.getDateCreated() < old) { f.setTrashed(true); n++; }
+  }
+  finishMoves_(retry);
   return n;
 }
 function logAction_(who, action, id, detail) {

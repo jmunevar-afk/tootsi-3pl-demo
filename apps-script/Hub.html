@@ -26,7 +26,7 @@ const ICON={up:"⚪",tom:"🔵",due:"🟡",nudge:"🟠",esc:"🔴",paused:"⏸"}
 let DATA=null,whF="",kpiF="",ownF="",qRaw="",view="table",welcome=true,openId=null;
 try{welcome=localStorage.getItem("pohub_welcome")!=="0"}catch(e){}
 let HUBLINES=[];
-const RCV={title:"Tootsi receiving",nextLabel:"Back to the PO",lines:()=>HUBLINES,askP:r=>!!r.askP,upload:f=>call("hubUpload",f),
+const RCV={title:"Tootsi receiving",nextLabel:"Back to the PO",lines:()=>HUBLINES,askP:r=>!!r.askP,fresh:r=>!!r.fresh,upload:f=>call("hubUpload",f),
  check:(r,c)=>call("hubAction",r.id,"check",c),submit:(r,pl)=>call("hubAction",r.id,"receive",pl),after:async(r)=>{await load();openPO(r.id)}};
 
 async function load(){try{DATA=await call("hubLoad");$("uname").textContent=DATA.me;const tv=$("tplview");if(DATA.cfg&&DATA.cfg.portalUrl){tv.href=DATA.cfg.portalUrl+(DATA.cfg.portalUrl.indexOf("?")<0?"?":"&")+"view=3pl";tv.style.display=""}render()}catch(e){$("main").innerHTML=`<div class="err">${esc(e.message)}</div>`}}
@@ -107,7 +107,8 @@ async function openPO(id,keepScroll){openId=id;const y=keepScroll&&$("drawer").c
  const av=r.avail;
  openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="Close">×</button><div class="dsub">Purchase order · ${esc(r.wh||"no destination")} · ${esc(r.supplier)}</div><h2 class="mono" id="dtitle" tabindex="-1">PO ${esc(r.po)}</h2><div>${esc(r.item)} · ${esc(r.desc)}</div>
   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${r.unplanned?"":allocPill(r)}<span class="pill ${r.qc==="Locked"?"p-warn":r.qc==="Released"?"p-done":"p-grey"}">${qcText(r)}</span>${r.sla&&r.sla.lvl!=="up"?slaPill(r):""}</div>
-  <div class="summary ${is&&is.status==="Open"?"":s?"ok":"info"}">${esc(sum)}</div></div>
+  <div class="summary ${is&&is.status==="Open"?"":s?"ok":"info"}">${esc(sum)}</div>
+  ${!tp&&!s&&!r.closed&&r.wh&&!r.unplanned?`<button type="button" class="btn" id="recvtop" style="width:100%;margin-top:10px">Record receiving at ${esc(r.wh)}</button>`:""}</div>
  <div class="db"><div class="ferr" id="d_err" role="alert"></div>
   ${r.unplanned?`<div class="sec"><div class="card lvl-esc"><b>Arrived at ${esc(r.wh)} but not on the upcoming list</b><div class="small">Reported by ${esc(r.unplanned.by)} · ${esc(r.unplanned.at)} · container ${esc(r.cntr||"—")} · ${fmt(r.plt)} pallets · supplier on paperwork: ${esc(r.supplier)}</div>
    <div class="row r2" style="margin-top:8px"><div><label for="up_po">PO number (SAP)</label><input class="in" id="up_po" value="${/^NEW-/.test(r.po)?"":esc(r.po)}"></div><div><label for="up_item">Item code</label><input class="in" id="up_item"></div></div>
@@ -172,12 +173,19 @@ async function openPO(id,keepScroll){openId=id;const y=keepScroll&&$("drawer").c
  $("i_file").onchange=async e=>{const f=e.target.files[0];if(!f)return;busy(true);try{const rf=await readFile(f);busy(false);act(id,"doc",{cat:v("i_cat"),file:{name:rf.name,type:rf.type,data:rf.data}},"File added.")}catch(er){busy(false);toast(er.message)}};
  const sb=$("sapbtn");if(sb)sb.onclick=()=>act(id,"sap",{},"Marked as entered in SAP.");
  const nd=$("nudge");if(nd)nd.onclick=()=>act(id,"nudge",{},"Nudge sent.");
- const uo=$("up_ok");if(uo)uo.onclick=()=>act(id,"confirmUnplanned",{po:v("up_po"),item:v("up_item"),cs:v("up_cs"),lbs:v("up_lbs")},"PO confirmed.");
+ const uo=$("up_ok");if(uo)uo.onclick=async()=>{const d={po:v("up_po"),item:v("up_item"),cs:v("up_cs"),lbs:v("up_lbs")};busy(true);
+  try{await call("hubAction",id,"confirmUnplanned",d);busy(false);await Promise.all([load(),openPO(id,true)]);toast("PO confirmed.")}
+  catch(e){busy(false);const m=String(e.message).match(/^MOVE\?(\w+)\?(\d+)/);
+   if(!m){toast(e.message);return}
+   // the PO is planned at another warehouse: ask before moving its lines
+   $("d_err").innerHTML=`<div class="confirm">PO ${esc(d.po)} is planned for <b>${m[1]}</b> (${m[2]} line(s)). It arrived at ${esc(r.wh)}. Move those lines to ${esc(r.wh)}?<div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="btn" id="mvyes">Yes, move to ${esc(r.wh)}</button><button type="button" class="btn ghost" id="mvno">Cancel</button></div></div>`;
+   $("mvno").onclick=()=>{$("d_err").innerHTML=""};$("mvyes").onclick=()=>act(id,"confirmUnplanned",Object.assign(d,{move:true}),"PO confirmed and moved.")}};
  if(is){$("is_owner").onchange=()=>act(id,"issue",{owner:v("is_owner")});$("is_urg").onchange=()=>act(id,"issue",{urgent:v("is_urg")==="1"});$("is_st").onchange=()=>act(id,"issue",{status:v("is_st")});
   const dec=$("is_dec");if(dec)dec.onchange=()=>act(id,"issue",{decision:v("is_dec"),decisionNote:v("is_decn")});
   const a=$("askre");if(a)a.onclick=()=>{$("askbox").innerHTML=`<div class="confirm">Ask ${esc(r.wh)} to count PO ${esc(r.po)} again? Their current count, photos and documents stay on file.<div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="btn" id="askyes">Yes, ask ${esc(r.wh)}</button><button type="button" class="btn ghost" id="askno">Cancel</button></div></div>`;$("askyes").focus();$("askno").onclick=()=>{$("askbox").innerHTML=""};$("askyes").onclick=()=>act(id,"recount",{},r.wh+" will see the recount request.")};
   const cl=$("claim");if(cl)cl.onclick=()=>{$("claimbox").innerHTML=`<textarea id="ct" rows="16" style="margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:12px" aria-label="Claim summary">${esc(r.claim)}</textarea><button type="button" class="btn" id="cc" style="margin-top:8px">Copy for email to supplier</button>`;$("cc").onclick=async()=>{try{await navigator.clipboard.writeText($("ct").value);toast("Copied.")}catch(e){$("ct").select();toast("Select all and copy (Ctrl+C).")}}};}
- const so=$("slipopen");if(so)so.onclick=async()=>{busy(true);try{openFile(await call("hubSlip",id))}catch(e){toast(e.message)}busy(false)};
+ const so=$("slipopen");if(so)so.onclick=async()=>{busy(true);try{openFile(await call("hubSlip",id),"Open packing slip")}catch(e){toast(e.message)}busy(false)};
+ const rt=$("recvtop");if(rt)rt.onclick=()=>$("recvown").click();
  const ro=$("recvown");if(ro)ro.onclick=()=>{HUBLINES=r.lines.filter(x=>!x.done).map(x=>({id:x.id,po:x.po,item:x.item,desc:x.desc}));openReceive({id:r.id,po:r.po,item:r.item,desc:r.desc,eta:r.eta,cntr:r.cntr,plt:r.plt,load:r.load,floor:r.floor,instr:"",req:false,shipPlt:r.shipPlt,askP:r.askP})};
  const ph=$("prehub");if(ph)ph.onclick=()=>{$("phbox").innerHTML=`<div class="confirm">Mark the ${r.lines.filter(x=>!x.done).length} open line(s) of this shipment as received before the hub? The 3PL will no longer see them.<div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="btn" id="phyes">Yes, mark as received</button><button type="button" class="btn ghost" id="phno">Cancel</button></div></div>`;$("phyes").focus();$("phno").onclick=()=>{$("phbox").innerHTML=""};$("phyes").onclick=()=>act(id,"prehub",{},"Marked as received before the hub.")};
  const rop=$("reopen");if(rop)rop.onclick=()=>act(id,"reopen",{},"Reopened.");

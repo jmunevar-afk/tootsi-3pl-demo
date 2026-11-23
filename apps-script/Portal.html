@@ -19,7 +19,22 @@
 <script>
 let TOKEN=null,WH="",NAME="";const HUB_URL=<?!= JSON.stringify(hubUrl) ?>;
 let lang=<?!= JSON.stringify(lang) ?>;try{lang=localStorage.getItem("tootsi_lang")||lang}catch(e){}
-Object.assign(L.en,{slip:"Packing slip"});Object.assign(L.fr,{slip:"Bordereau d'expédition"});
+Object.assign(L.en,{slip:"Packing slip",open:"Open"});Object.assign(L.fr,{slip:"Bordereau d'expédition",open:"Ouvrir"});
+/** Server messages are in English: show the 3PL the French version. */
+const ERR_FR={"PO not found.":"Commande introuvable.","Reason and details are required.":"La raison et les détails sont obligatoires.","The new date must be within the next 3 weeks.":"La nouvelle date doit être dans les 3 prochaines semaines.",
+ "Paperwork photo and product are required.":"La photo des documents et le produit sont obligatoires.","Choose the load condition.":"Choisissez l'état du chargement.","Describe the damage.":"Décrivez les dommages.",
+ "Photos and documents are missing.":"Il manque des photos ou des documents.","Explain the difference.":"Expliquez l'écart.","Enter the number of pallets.":"Entrez le nombre de palettes.",
+ "A photo was not uploaded. Please add it again.":"Une photo n'a pas été envoyée. Ajoutez-la de nouveau.","A photo was already used in another receipt. Please add it again.":"Cette photo a déjà servi pour une autre réception. Ajoutez-la de nouveau.",
+ "Only photos and PDF files can be added.":"Seulement des photos et des fichiers PDF.","File too large (10 MB max).":"Fichier trop gros (10 Mo max).","Too many photos this hour. Please wait a few minutes.":"Trop de photos cette heure-ci. Attendez quelques minutes.",
+ "No packing slip yet.":"Pas encore de bordereau.","The hub is busy saving someone else's change. Please try again in a few seconds.":"Le système est occupé. Réessayez dans quelques secondes.",
+ "Enter every item of this shipment (0 cases if an item did not come).":"Entrez chaque article de la livraison (0 caisse si un article n'est pas arrivé)."};
+ERR_FR['This PO is already in your list. Look for it under "To receive".']="Cette commande est déjà dans votre liste, sous « À recevoir ».";
+function errT(m){m=String(m||"");if(lang!=="fr")return m;if(ERR_FR[m])return ERR_FR[m];
+ let x=m.match(/^Lot and expiry are required for item (\S+)\./);if(x)return"Lot et date d'expiration obligatoires pour l'article "+x[1]+". L'expiration doit être après la date de réception.";
+ x=m.match(/^Label photo missing for item (\S+)\./);if(x)return"Photo de l'étiquette manquante pour l'article "+x[1]+".";
+ x=m.match(/^Enter cases \(0 or more\) for item (\S+)\./);if(x)return"Entrez les caisses (0 ou plus) pour l'article "+x[1]+".";
+ if(/date received/i.test(m))return"Vérifiez la date de réception (pas dans le futur, pas plus de 60 jours).";
+ if(/Failed to fetch|NetworkError|network/i.test(m))return"Pas de connexion. Vos données sont gardées; réessayez.";return m}
 Object.assign(L.en,{search:"Search",search_ph:"Search PO, container or product…"});Object.assign(L.fr,{search:"Rechercher",search_ph:"Rechercher une commande, un conteneur ou un produit…"});
 Object.assign(L.en,{lg_h:"Sign in",lg_s:"3PL partners: use the username and password Tootsi gave you.",lg_user:"Username",lg_pw:"Password",lg_btn:"Sign in",lg_bad:"Wrong username or password.",lg_locked:"Too many tries. Wait 10 minutes, or call Tootsi Inventory Control.",lg_exp:"Your session ended. Please sign in again.",lg_staff:"Tootsi staff",lg_staffp:"Use your Tootsi Google account. No extra password.",lg_staffb:"Open the PO Hub with Google",lg_forgot:"Forgot your password? Call Tootsi Inventory Control. We reset it in one minute.",lg_tag:"Tootsi deliveries at your warehouse.",lg_p:"See the POs coming to you, receive them and send the photos and counts to Tootsi.",lg_l1:"Only your warehouse's deliveries",lg_l2:"Blind count with automatic recount",lg_l3:"Photos and receiving document in one step",lg_l4:"Report a delay in two taps",logout:"Sign out"});
 Object.assign(L.fr,{lg_h:"Connexion",lg_s:"Partenaires 3PL : utilisez le nom d'utilisateur et le mot de passe fournis par Tootsi.",lg_user:"Nom d'utilisateur",lg_pw:"Mot de passe",lg_btn:"Se connecter",lg_bad:"Nom d'utilisateur ou mot de passe incorrect.",lg_locked:"Trop d'essais. Attendez 10 minutes ou appelez le contrôle d'inventaire Tootsi.",lg_exp:"Votre session est terminée. Veuillez vous reconnecter.",lg_staff:"Employés Tootsi",lg_staffp:"Utilisez votre compte Google Tootsi. Aucun autre mot de passe.",lg_staffb:"Ouvrir le PO Hub avec Google",lg_forgot:"Mot de passe oublié ? Appelez le contrôle d'inventaire Tootsi. On le réinitialise en une minute.",lg_tag:"Les livraisons Tootsi à votre entrepôt.",lg_p:"Voyez les commandes qui arrivent chez vous, recevez-les et envoyez photos et quantités à Tootsi.",lg_l1:"Seulement les livraisons de votre entrepôt",lg_l2:"Comptage à l'aveugle avec recomptage automatique",lg_l3:"Photos et bon de réception en une étape",lg_l4:"Signaler un retard en deux touches",logout:"Déconnexion"});
@@ -97,11 +112,11 @@ function render(){
  document.querySelectorAll(".po").forEach(el=>el.onclick=()=>{const r=DATA.rows.find(x=>x.id===el.dataset.po);r.sent?showSent(r):openReceive(r)});
  const pq=$("pq");pq.oninput=e=>{q=e.target.value;clearTimeout(pq.t);pq.t=setTimeout(()=>{render();const n=$("pq");n.focus();n.setSelectionRange(n.value.length,n.value.length)},250)};
  document.querySelectorAll("[data-delay]").forEach(b=>b.onclick=()=>openDelay(DATA.rows.find(x=>x.id===b.dataset.delay)));
- document.querySelectorAll("[data-slip]").forEach(b=>b.onclick=async()=>{busy(true);try{openFile(await call("portalSlip",TOKEN,b.dataset.slip))}catch(e){toast(e.message)}busy(false)});
+ document.querySelectorAll("[data-slip]").forEach(b=>b.onclick=async()=>{busy(true);try{openFile(await call("portalSlip",TOKEN,b.dataset.slip),t("open"))}catch(e){toast(errT(e.message))}busy(false)});
  $("unpl").onclick=openUnplanned;
 }
 
-const RCV={lines:r=>DATA.rows.filter(x=>x.ship===r.ship&&!x.sent),askP:r=>!!r.askP,upload:f=>call("portalUpload",TOKEN,f),slip:x=>call("portalSlip",TOKEN,x.id),
+const RCV={lines:r=>DATA.rows.filter(x=>x.ship===r.ship&&!x.sent),askP:r=>!!r.askP,fresh:r=>!!r.fresh,upload:f=>call("portalUpload",TOKEN,f),slip:x=>call("portalSlip",TOKEN,x.id),
  check:(r,c)=>call("portalCheckShip",TOKEN,r.id,c),submit:(r,pl)=>call("portalSubmitShip",TOKEN,r.id,pl),after:(r,next)=>{if(next)tab="todo";load()}};
 function showSent(r){const s=r.sent,q=o=>`${fmt(o.plt)} ${t("u_plt")} / ${fmt(o.cs)} ${t("u_cs")}${o.lbs!==""&&o.lbs!=null?" / "+fmt(o.lbs)+" "+t("u_lb"):""}`;
  openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><div class="dsub">${t("ro")} · ${esc(s.at)}</div><h2 class="mono" id="dtitle" tabindex="-1">PO ${esc(r.po)}</h2><div>${esc(r.item)} · ${esc(r.desc)}</div></div>
@@ -110,14 +125,16 @@ function showSent(r){const s=r.sent,q=o=>`${fmt(o.plt)} ${t("u_plt")} / ${fmt(o.
   ${s.diffNote?`<span class="k">${t("note_c")}</span><span>${esc(s.diffNote)}</span>`:""}<span class="k">${t("lot")}</span><span class="mono">${esc(s.lot)}</span><span class="k">${t("exp")}</span><span>${fdy(s.exp)}</span>
   <span class="k">${t("cond")}</span><span style="${s.damage?"color:#b0182f":""}">${esc(t((CONDS.find(c=>c[0]===s.cond)||[,,s.cond])[2]))}${s.damage?" · "+esc(s.dmgText):""}</span>${s.comment?`<span class="k">${t("your_com")}</span><span>${esc(s.comment)}</span>`:""}</div></div>
   ${s.files.length?`<div class="sec small">${s.files.map(f=>"📎 "+esc(f.cat)+" · "+esc(f.name)).join("<br>")}</div>`:""}
-  <div class="sec"><div class="note">${t("ro_change")}</div></div></div>`)}
+  ${r.slip?`<div class="sec"><button type="button" class="btn ghost" id="sslip" style="width:100%">📄 ${t("slip")}</button></div>`:""}
+  <div class="sec"><div class="note">${t("ro_change")}</div></div></div>`);
+ const ss=$("sslip");if(ss)ss.onclick=async()=>{busy(true);try{openFile(await call("portalSlip",TOKEN,r.id),t("open"))}catch(e){toast(errT(e.message))}busy(false)}}
 
 // ---------- delays ----------
 let dform;
 function openDelay(r){cur=r;
  if(r.delay){openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><div class="dsub">${t("d_cur")}</div><h2 class="mono" id="dtitle" tabindex="-1">PO ${esc(r.po)}</h2><div class="dsub">${esc(t(r.delay.reason))}</div></div>
   <div class="db"><div class="sec"><p style="font-size:15px">${t("d_solve_q")}</p><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="btn" id="dy" style="min-height:52px;flex:1">${t("yes")}</button><button type="button" class="btn ghost" id="dn" style="min-height:52px;flex:1">${t("no")}</button></div></div></div>`);
-  $("dn").onclick=closeD;$("dy").onclick=async()=>{busy(true);try{DATA=await call("portalSolveDelay",TOKEN,r.id);closeD();render();toast(t("d_closed"))}catch(e){toast(e.message)}busy(false)};return}
+  $("dn").onclick=closeD;$("dy").onclick=async()=>{busy(true);try{DATA=await call("portalSolveDelay",TOKEN,r.id);closeD();render();toast(t("d_closed"))}catch(e){toast(errT(e.message))}busy(false)};return}
  dform={reason:"",note:"",newDate:"",pics:[]};drawDelay()}
 function drawDelay(){const r=cur,miss=!dform.reason?t("d_miss_r"):dform.note.trim().length<5?t("d_miss_n"):"";
  openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><div class="dsub">${t("delay_h")}</div><h2 class="mono" id="dtitle" tabindex="-1">PO ${esc(r.po)}</h2><div class="dsub">${esc(r.desc)} · ${t("expected")} ${fd(r.eta)}${r.cntr?" · "+esc(r.cntr):""}</div></div>
@@ -130,7 +147,7 @@ function drawDelay(){const r=cur,miss=!dform.reason?t("d_miss_r"):dform.note.tri
  document.querySelectorAll("[data-rs]").forEach(b=>b.onclick=()=>{dform.reason=b.dataset.rs;dform.note=$("d_note").value;dform.newDate=$("d_new").value;drawDelay()});
  $("d_note").oninput=e=>{dform.note=e.target.value;chk()};$("d_new").oninput=e=>{dform.newDate=e.target.value};
  $("d_pic").onchange=async e=>{busy(true);for(const f of e.target.files)dform.pics.push(await readFile(f));busy(false);dform.note=$("d_note").value;drawDelay()};
- $("d_send").onclick=async()=>{busy(true);try{DATA=await call("portalDelay",TOKEN,r.id,{reason:dform.reason,note:$("d_note").value,newDate:$("d_new").value,files:dform.pics.map(f=>({name:f.name,type:f.type,data:f.data}))});closeD();render();toast(t("d_sent"))}catch(e){toast(e.message)}busy(false)}}
+ $("d_send").onclick=async()=>{busy(true);try{DATA=await call("portalDelay",TOKEN,r.id,{reason:dform.reason,note:$("d_note").value,newDate:$("d_new").value,files:dform.pics.map(f=>({name:f.name,type:f.type,data:f.data}))});closeD();render();toast(t("d_sent"))}catch(e){toast(errT(e.message))}busy(false)}}
 
 // ---------- PO arrived that is not on the list ----------
 let uform;
@@ -146,7 +163,7 @@ function drawUnplanned(){const ok=uform.doc.length&&uform.desc.trim();
  const keep=()=>["po","cntr","sup","desc","plt"].forEach(k=>uform[k]=$("u_"+k).value);
  ["po","cntr","sup","desc","plt"].forEach(k=>$("u_"+k).oninput=()=>{keep();$("u_send").disabled=!(uform.doc.length&&uform.desc.trim())});
  document.querySelectorAll("[data-uf]").forEach(i=>i.onchange=async()=>{keep();busy(true);for(const f of i.files)uform[i.dataset.uf].push(await readFile(f));busy(false);drawUnplanned()});
- $("u_send").onclick=async()=>{keep();busy(true);try{DATA=await call("portalUnplanned",TOKEN,{po:uform.po,cntr:uform.cntr,sup:uform.sup,desc:uform.desc,plt:uform.plt,files:uform.doc.map(f=>({name:f.name,type:f.type,data:f.data})),loadFiles:uform.load.map(f=>({name:f.name,type:f.type,data:f.data}))});closeD();render();toast(t("u_sent"))}catch(e){toast(e.message)}busy(false)}}
+ $("u_send").onclick=async()=>{keep();busy(true);try{DATA=await call("portalUnplanned",TOKEN,{po:uform.po,cntr:uform.cntr,sup:uform.sup,desc:uform.desc,plt:uform.plt,files:uform.doc.map(f=>({name:f.name,type:f.type,data:f.data})),loadFiles:uform.load.map(f=>({name:f.name,type:f.type,data:f.data}))});closeD();render();toast(t("u_sent"))}catch(e){toast(errT(e.message))}busy(false)}}
 
 // a session can end mid-shift (12 h limit, password reset): send the user back to sign in
 const _call=call;call=(...a)=>_call(...a).catch(e=>{if(e.message==="SESSION"&&a[0]!=="portalLoad"){signedOut("lg_exp")}throw e});

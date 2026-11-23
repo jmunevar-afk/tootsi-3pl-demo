@@ -78,7 +78,8 @@ function sync_(st, ctx) {
   r.writes.forEach(function (is) {
     var isNew = is._new, esc = is._esc, chg = is._chg; delete is._new; delete is._esc; delete is._chg;
     upsert_('Issues', 'id', is);
-    if (isNew || esc || chg) mail.push(is); // email only when an issue is created or becomes urgent
+    var quiet = /^Not received at/.test(is.type) && !truthy(is.urgent); // 1 day late: the hub shows it; email only once escalated
+    if ((isNew || esc || chg) && !quiet) mail.push(is); // email only when an issue is created or becomes urgent
   });
   notifyIssues_(mail, ctx);
   var seenN = {};
@@ -115,7 +116,7 @@ function portalLoad(token) {
   return { wh: u.wh, name: u.name, today: ctx.today, rows: rows };
 }
 /** A PO line of this 3PL, or "PO not found" (same message either way, so nobody can probe other warehouses). */
-function myPO_(st, id, u) { var p = st.pos.filter(function (x) { return String(x.id) === String(id); })[0]; if (!p || p.wh !== u.wh || p.closed) throw new Error('PO not found.'); return p; }
+function myPO_(st, id, u) { var p = st.pos.filter(function (x) { return String(x.id) === String(id); })[0]; if (!p || p.wh !== u.wh || p.closed || (p.unplannedJson && !truthy(p.planOk))) throw new Error('PO not found.'); return p; }
 
 /** Step 1 of any upload: one file per call, so big containers never hit Google's size limit. Returns a file id, never a link. */
 function portalUpload(token, f) { var u = tplUser_(token); uploadQuota_(u.wh); return saveIncoming_(u.wh, checkFile_(f)); }
@@ -202,13 +203,23 @@ function portalUnplanned(token, d) {
 function openLines_(p, st) { return shipLines(p, st).filter(function (x) { return x.wh === p.wh && !isDone(x, st); }); }
 /** Pallets are counted once per shipment, and only on the first receiving (not on a recount of one line). */
 /** Pallets are counted on the first receiving of a shipment, and again when the line that holds the pallet count is recounted. */
-function palletsAsked_(p, st) {
+function palletsAsked_(p, st) { return shipAskP(p, st); }
+function palletsAskedOld_(p, st) {
   if (shipFresh(p, st)) return true;
   return openLines_(p, st).some(function (x) { return (st.hist[x.id] || []).some(function (s) { return s.plt !== '' && s.plt != null; }); });
 }
 /** A receiving round starts at the last recount request, and never looks back more than 7 days. */
-function roundStart_(lines, st, ctx) { var t = addDays(ctx.today, -7) + ' 00:00'; lines.forEach(function (x) { if (st.req[x.id] && String(st.req[x.id].at) > t) t = String(st.req[x.id].at); }); return t; }
-function wrongChecks_(key, since) { return readAll_('Checks').filter(function (c) { return c.key === key && c.off !== '' && String(c.at) >= since; }); }
+/** A receiving round: the checks made after the last recount request (each request stores how many checks existed then),
+ *  and never more than 7 days back. */
+function roundStart_(lines, st, ctx) {
+  var t = { at: addDays(ctx.today, -7) + ' 00:00', base: 0 };
+  lines.forEach(function (x) { var q = st.req[x.id]; if (q && num(q.base) != null && num(q.base) > t.base) t.base = num(q.base); });
+  return t;
+}
+function wrongChecks_(key, since) {
+  return readAll_('Checks').filter(function (c) { return c.key === key; }).slice(since.base || 0)
+    .filter(function (c) { return c.off !== '' && String(c.at) >= since.at; });
+}
 
 /** Compare a shipment count to what is expected. Returns the off lines and whether the pallet total is off. */
 function shipDiff_(p, st, ctx, f) {
@@ -252,24 +263,29 @@ function submitShip_(p, st, ctx, f, by, ext, wh) {
   lines.forEach(function (x) {
     var L = byId[x.id], cs = num(L.cs), lb = num(L.lbs);
     if (cs == null || cs < 0 || cs > 1000000 || (lb != null && (lb < 0 || lb > 200000))) throw new Error('Enter cases (0 or more) for item ' + x.item + '.');
-    if (cs > 0 && (!String(L.lot || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(L.exp || '')) || L.exp <= f.recv)) throw new Error('Lot and expiry are required for item ' + x.item + '. Expiry must be after the date received.');
+    if (cs > 0 && (!String(L.lot || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(L.exp || '')) || L.exp <= f.recv || L.exp > addDays(f.recv, 3660))) throw new Error('Lot and expiry are required for item ' + x.item + '. Expiry must be after the date received.');
     if (cs > 0 && !(L.label || []).length) throw new Error('Label photo missing for item ' + x.item + '.');
   });
   if (!f.cond) throw new Error('Choose the load condition.');
   var bad = f.cond !== 'Good';
   if (bad && String(f.dmgText || '').trim().length < 10) throw new Error('Describe the damage.');
-  if ((askP && !(f.load || []).length) || !(f.doc || []).length || (bad && !(f.dmg || []).length)) throw new Error('Photos and documents are missing.');
+  var fresh = shipFresh(p, st); // the "before unloading" photo only makes sense on the first receiving
+  if ((fresh && !(f.load || []).length) || !(f.doc || []).length || (bad && !(f.dmg || []).length)) throw new Error('Photos and documents are missing.');
   // 1. every photo must be a real upload of this warehouse (checked BEFORE the count, so a fake submit learns nothing)
   var files = {}, verify = function (ids) { return (ids || []).slice(0, 20).map(function (fid) { if (!files[fid]) files[fid] = verifyFile_(fid, wh); return files[fid]; }); };
   var sharedRaw = [[f.load, 'Load photo (before unloading)'], [f.doc, 'Receiving document'], [f.dmg, 'Damage photo']];
   sharedRaw.forEach(function (z) { verify(z[0]); });
   lines.forEach(function (x) { verify(byId[x.id].label); });
+  var used = CacheService.getScriptCache();
+  Object.keys(files).forEach(function (fid) { if (used.get('used_' + fid)) throw new Error('A photo was already used in another receipt. Please add it again.'); });
   // 2. the count: a submit with a different count is recorded like a check (same 2-try limit)
   var r = shipDiff_(p, st, ctx, f), offAll = r.off.length || r.plt;
   var wrong = wrongChecks_(key, roundStart_(lines, st, ctx));
-  var record = function () { var offList = r.off.slice(); if (r.plt) offList.push('pallets'); if (wrong.length < 2) append_('Checks', { key: key, at: ctx.stamp, by: by, off: offList.join(','), countJson: { plt: num(f.plt), lines: (f.lines || []).map(function (L) { return { id: L.id, cs: num(L.cs), lbs: num(L.lbs) }; }) } }); };
+  var record = function () { var offList = r.off.slice(); if (r.plt) offList.push('pallets'); append_('Checks', { key: key, at: ctx.stamp, by: by, off: offList.join(','), countJson: { plt: num(f.plt), lines: (f.lines || []).map(function (L) { return { id: L.id, cs: num(L.cs), lbs: num(L.lbs) }; }) } }); };
   if (offAll && !wrong.length) { record(); throw new Error('RECOUNT'); }
   if (offAll && String(f.diffNote || '').trim().length < 10) { record(); throw new Error('Explain the difference.'); }
+  // after 2 wrong counts the answer is the same whatever the count: a note is required, so retrying teaches nothing
+  if (wrong.length >= 2 && String(f.diffNote || '').trim().length < 10) throw new Error('Explain the difference.');
   // first count = the first wrong check of this round, from the server (never from the browser)
   var first = wrong.length ? (wrong[0].countJson || {}) : null, firstLine = {};
   if (first) (first.lines || []).forEach(function (L) { firstLine[L.id] = L; });
@@ -296,6 +312,7 @@ function submitShip_(p, st, ctx, f, by, ext, wh) {
   });
   if (comment) notePOs_(lines, by, comment, ctx, ext);
   logAction_(by, 'receipt', key, lines.length + ' lines' + (askP ? ' / ' + num(f.plt) + ' plt' : '') + (bad ? ' / ' + f.cond : ''));
+  Object.keys(files).forEach(function (fid) { used.put('used_' + fid, '1', 21600); });
   queueMaster_(lines, byId, f, wh, ctx);
   sync_(loadState_(), ctx);
   return { ok: true, flagged: !!offAll || bad, n: lines.length, _moves: moves };
@@ -317,10 +334,12 @@ function queueMaster_(lines, byId, f, wh, ctx) {
 
 /** Supplier packing slip of a PO (from Arash's extractor). The 3PL gets it only for its own POs, and only if SLIP_TO_3PL = yes. */
 function portalSlip(token, id) {
-  var u = tplUser_(token), st = loadState_(), p = myPO_(st, id, u);
-  if (String(config_().SLIP_TO_3PL || 'yes') !== 'yes') throw new Error('Not available.');
-  var s = st.slip[p.po]; if (!s || s.status !== 'FOUND' || !s.fileId) throw new Error('No packing slip yet.');
-  return slipFile_(s.fileId);
+  var u = tplUser_(token), st = loadState_();
+  // a sent line is no longer "open", so look it up directly (still only this 3PL's own, planned PO)
+  var p = st.pos.filter(function (x) { return String(x.id) === String(id); })[0];
+  if (!p || p.wh !== u.wh || (p.unplannedJson && !truthy(p.planOk))) throw new Error('PO not found.');
+  if (!slipFor3pl(p, st, ctx_())) throw new Error('No packing slip yet.');
+  return slipFile_(st.slip[p.po].fileId);
 }
 function hubSlip(id) { hubUser_(); var st = loadState_(), p = findPO_(st, id), s = st.slip[p.po]; if (!s || !s.fileId) throw new Error('No packing slip yet.'); return slipFile_(s.fileId); }
 
@@ -336,7 +355,7 @@ function hubLoad() {
   return { me: me, today: ctx.today, rows: st.pos.map(function (p) { return hubRow(p, st, ctx); }), cfg: { nudgeH: ctx.cfg.SLA_NUDGE_H || 9, escH: ctx.cfg.SLA_ESC_H || 18, portalUrl: String(ctx.cfg.PORTAL_URL || ''), goLive: String(ctx.cfg.GO_LIVE || '') } };
 }
 /** Staff uploads (BM/LY/HB receiving photos). One file per call. */
-function hubUpload(f) { hubUser_(); uploadQuota_('HUB'); return saveIncoming_('HUB', checkFile_(f)); }
+function hubUpload(f) { var me = hubUser_(); uploadQuota_('HUB' + me); return saveIncoming_('HUB', checkFile_(f)); }
 /** At most 200 uploads per hour per warehouse, so nobody can fill the Drive. */
 function uploadQuota_(who) {
   var c = CacheService.getScriptCache(), k = 'upq_' + who + '_' + Utilities.formatDate(new Date(), 'America/Toronto', 'yyyyMMddHH'), n = Number(c.get(k) || 0);
@@ -350,6 +369,11 @@ function hubDetailLoad(id) {
 /** One entry point for all internal edits. action = what to do, d = data. */
 function hubAction(id, action, d) {
   var me = hubUser_();
+  if (action === 'syncNow') { // staff: pull the sheets now. Outside the hub lock, at most once every 2 minutes.
+    var cc = CacheService.getScriptCache(); if (cc.get('syncNow')) throw new Error('A sync ran less than 2 minutes ago. Please wait.');
+    cc.put('syncNow', me, 120); logAction_(me, 'syncNow', '', '');
+    return { ok: true, sync: syncSources_() };
+  }
   var preDoc = action === 'doc' ? saveFile_(id, checkFile_((d || {}).file)) : null; // Drive save outside the lock
   var out = withLock_(function () {
     var ctx = ctx_(), st = loadState_(), p = id ? findPO_(st, id) : null, is = id ? st.issue[id] : null;
@@ -382,8 +406,7 @@ function hubAction(id, action, d) {
         if (whCh) ch.push('destination ' + d.wh);
         if (d.eta) ch.push('ETA ' + d.eta);
         note_(id, me, 'Expected data updated' + (ch.length ? ': ' + ch.join(', ') : '') + (sib.length && (d.eta || d.wh) ? ' (whole shipment, ' + (sib.length + 1) + ' lines)' : ''), ctx); break;
-      case 'syncNow': // staff: pull the Upcoming sheet, packing slips and the master sheet right now
-        return { ok: true, sync: syncSources_() };
+
       case 'expectedBulk': // expected cases for several lines of the same PO in one save
         var setN = 0;
         Object.keys(d.cs || {}).forEach(function (lid) {
@@ -413,7 +436,7 @@ function hubAction(id, action, d) {
       case 'recount':
         var s = st.sub[id]; if (!s || !isTPL(p.wh)) throw new Error('Nothing to recount.');
         s.superseded = true; upsert_('Submissions', 'subId', s);
-        upsert_('Recounts', 'id', { id: id, at: ctx.stamp, from: ctx.today, active: true }); note_(id, me, 'Asked ' + p.wh + ' for another count', ctx); notify3pl_(p, 'recount', ctx); break;
+        upsert_('Recounts', 'id', { id: id, at: ctx.stamp, from: ctx.today, active: true, base: readAll_('Checks').filter(function (c) { return c.key === shipKey(p); }).length }); note_(id, me, 'Asked ' + p.wh + ' for another count', ctx); notify3pl_(p, 'recount', ctx); break;
       case 'nudge':
         if (p.nudged === ctx.today) throw new Error('Already nudged today.');
         p.nudged = ctx.today; savePO_(p, ctx); note_(id, me, 'Nudge sent to ' + p.wh, ctx); notify3pl_(p, 'nudge', ctx); break;
@@ -425,10 +448,13 @@ function hubAction(id, action, d) {
         return submitShip_(p, st, ctx, d, 'Tootsi receiving (' + p.wh + ') · ' + me, false, 'HUB');
       case 'check': if (isTPL(p.wh)) throw new Error('3PL POs are received by the 3PL.'); return checkShipCall_(p, st, ctx, d, me);
       case 'confirmUnplanned':
+        if (!p.unplannedJson || truthy(p.planOk)) throw new Error('This is not an unplanned arrival.');
         var np = String(d.po || '').trim(); if (!/^\d{3,10}(-\d+)?$/.test(np)) throw new Error('Enter the PO number from SAP.');
         var cs = num(d.cs), lb = num(d.lbs); if (cs == null || cs < 0 || lb == null || lb < 0) throw new Error('Enter expected cases and lb.');
         // the PO may already be in the hub (no destination, or planned for another warehouse): move those lines here, no duplicate
         var planned = st.pos.filter(function (x) { return x.po === np && x.id !== p.id && !isDone(x, st); });
+        var elsewhere = planned.filter(function (x) { return x.wh && x.wh !== p.wh; });
+        if (elsewhere.length && !d.move) throw new Error('MOVE?' + elsewhere[0].wh + '?' + elsewhere.length);
         if (planned.length) {
           planned.forEach(function (x) { var m = String(x.manual || '').split(',').filter(String); if (m.indexOf('wh') < 0) m.push('wh'); x.manual = m.join(','); x.wh = p.wh; x.clockFrom = ctx.today; savePO_(x, ctx); });
           (p.unplannedJson.files || []).forEach(function (f) { append_('Docs', { id: planned[0].id, cat: f.cat, name: f.name, url: f.url, by: p.unplannedJson.by, at: p.unplannedJson.at }); });

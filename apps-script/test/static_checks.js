@@ -36,6 +36,9 @@ evil.forEach((src, i) => {
   const caught = st2.map(x => x.name).filter(n => !/_$/.test(n) && rr(n) && !GUARD.test(B[n]));
   ok('audit catches bypass #' + (i + 1), caught.length > 0, src);
 });
+// a function stored in a top-level var is callable from the browser too: there must be none (except private names)
+const varFns = [...code.matchAll(/^var (\w+)\s*=\s*function/gm)].map(x => x[1]).filter(n => !/_$/.test(n));
+ok('no public function hidden in a top-level var', varFns.length === 0, varFns);
 ok('Store helpers are private', ['readAll', 'append', 'upsert', 'deleteWhere', 'upsertWhere'].every(n => !bodies[n]));
 console.log('   public functions that reach data (all guarded): ' + pub.filter(n => reaches(n)).join(', '));
 

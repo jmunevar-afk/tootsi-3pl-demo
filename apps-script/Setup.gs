@@ -54,7 +54,7 @@ function setup(e) {
     EMAIL_ON: 'no', PILOT_ONLY_ME: 'yes', FALLBACK_EMAIL: me, CC_ALWAYS: '', EMAIL_3PL: 'no',
     TEAM_Purchasing: '', TEAM_Logistics: '', TEAM_QC: '', TEAM_Receiving: '', TEAM_InventoryControl: me, TEAM_Fulfillment: '',
     LANG_TP: 'fr', LANG_DL: 'fr', SESSION_HOURS: 12, GO_LIVE: today_(), COMPARE_LB: 'no',
-    SLIP_LOG_ID: '' /* Arash's "Packing Slip Extractor Log" spreadsheet id */, SLIP_TAB: 'PO Status', SLIP_TO_3PL: 'yes',
+    SLIP_LOG_ID: '' /* Arash's "Packing Slip Extractor Log" spreadsheet id */, SLIP_TAB: 'PO Status', SLIP_TO_3PL: 'after' /* after = the 3PL sees the slip once its count is sent (keeps the count blind); no; yes */,
     MASTER_SHEET_ID: '' /* third_party_whse master id */, MASTER_TAB: '3PL', MASTER_MODE: 'preview', HUB_URL: '', PORTAL_URL: '',
     UPCOMING_SHEET_ID: '' /* paste the ID of the UPCOMING FTL FCL sheet */, UPCOMING_TAB: 'UPCOMING FTL FCL', DIGEST_TO: me
   };
