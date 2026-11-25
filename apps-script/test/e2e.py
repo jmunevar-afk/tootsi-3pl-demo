@@ -173,6 +173,8 @@ async def main():
     for k,v in [("n_po","45001"),("n_item","10999"),("n_desc","TEST ALMONDS"),("n_sup","Test"),("n_eta","2026-11-27"),("n_plt","2"),("n_cs","80"),("n_lbs","2000")]: await hub.fill("#"+k,v)
     await hub.select_option("#n_wh","BM"); await hub.click("#nf button[type=submit]"); await hub.wait_for_timeout(1200)
     ok("manual PO added", "45001" in await hub.inner_text("main"))
+    np=await hub.evaluate("(()=>{const w=MOCK();return ['PO# 042831',' 42831 ','42831.0','P.O. 41499-1','#043105'].map(w.normPO)})()")
+    ok("PO numbers normalized", np==["42831","42831","42831","41499-1","43105"], np)
     # BM receiving by Tootsi with shared form
     await hub.click("[data-open='90301|10501']"); await hub.wait_for_timeout(900)
     ok("BM PO offers Tootsi receiving", await hub.locator("#recvown").count()==1)
@@ -195,6 +197,8 @@ async def main():
     ok("closed line shows as received before the hub", "Received before the hub" in await hub.inner_text("main") or True)
     pubs=await hub.evaluate("(()=>{const w=MOCK();return ['readAll_','append_','upsert_','deleteWhere_','addThreePL','setup','resetThreePLPassword'].map(n=>[n,typeof w[n]])})()")
     ok("internal helpers renamed", pubs[0][1]=="function")
+    await hub.click("#syncnow"); await hub.wait_for_timeout(1500)
+    ok("hub shows the last sync time", "Last sync" in await hub.inner_text("#syncline"), await hub.inner_text("#syncline"))
     await hub.click("[data-v='week']"); await hub.wait_for_timeout(300)
     ok("week board renders", await hub.locator(".week .wcol").count()==7)
     await hub.screenshot(path="/tmp/gws_hub.png")

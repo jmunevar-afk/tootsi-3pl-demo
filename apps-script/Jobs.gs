@@ -26,7 +26,7 @@ function importUpcoming_() {
   if (c.po < 0 || c.item < 0) throw new Error('Could not find the PO# / Item No. columns in the upcoming sheet.');
   var lines = [];
   for (var i = 1; i < v.length; i++) {
-    var r = v[i], po = String(r[c.po]).trim(), item = String(r[c.item]).trim();
+    var r = v[i], po = normPO(r[c.po]), item = String(r[c.item]).trim();
     if (!po || !item) continue;
     var eta = r[c.eta] instanceof Date ? Utilities.formatDate(r[c.eta], srcTz, 'yyyy-MM-dd') : (/^\d{4}-\d{2}-\d{2}/.test(String(r[c.eta])) ? String(r[c.eta]).slice(0, 10) : '');
     var whs = String(r[c.whs] || '').trim().toUpperCase();
@@ -76,6 +76,10 @@ function syncSources_() {
   try { out.upcoming = importUpcoming_(); } catch (err) { out.upcoming = 'error: ' + err.message; logAction_('Sync', 'error', 'upcoming', err.message); }
   try { out.slips = importSlips_(); } catch (err) { out.slips = 'error: ' + err.message; logAction_('Sync', 'error', 'slips', err.message); }
   try { out.master = syncMaster_(); } catch (err) { out.master = 'error: ' + err.message; logAction_('Sync', 'error', 'master', err.message); }
+  // "last synced" for the hub header, and when the Upcoming sheet itself last changed (how fresh the ETAs are)
+  var info = { LAST_SYNC: nowStamp_(), LAST_SYNC_OK: /error/.test(String(out.upcoming)) ? 'no' : 'yes' };
+  try { var id = config_().UPCOMING_SHEET_ID; if (id) info.UPCOMING_AT = Utilities.formatDate(DriveApp.getFileById(id).getLastUpdated(), 'America/Toronto', 'yyyy-MM-dd HH:mm'); } catch (e) {}
+  PropertiesService.getScriptProperties().setProperties(info);
   return out;
 }
 
@@ -87,9 +91,9 @@ function importSlips_() {
   var h = v[0].map(function (x) { return String(x).trim().toLowerCase(); }), c = function (n) { return h.indexOf(n); };
   var ci = { po: c('po'), st: c('packing slip'), file: c('packing slip file'), src: c('source / why it is missing'), act: c('action needed') };
   if (ci.po < 0 || ci.st < 0) throw new Error('Packing slip log: columns PO / Packing slip not found.');
-  var rows = v.slice(1).filter(function (r) { return /^\d{4,6}(-\d+)?$/.test(String(r[ci.po]).trim()); }).map(function (r) {
+  var rows = v.slice(1).filter(function (r) { return /^\d{4,6}(-\d+)?$/.test(normPO(r[ci.po])); }).map(function (r) {
     var url = ci.file >= 0 ? String(r[ci.file]).trim() : '', m = url.match(/\/d\/([\w-]{20,})/);
-    return { po: String(r[ci.po]).trim(), status: String(r[ci.st]).trim().toUpperCase(), url: url, fileId: m ? m[1] : '', source: ci.src >= 0 ? String(r[ci.src]).slice(0, 300) : '', action: ci.act >= 0 ? String(r[ci.act]).slice(0, 300) : '', checked: today_() };
+    return { po: normPO(r[ci.po]), status: String(r[ci.st]).trim().toUpperCase(), url: url, fileId: m ? m[1] : '', source: ci.src >= 0 ? String(r[ci.src]).slice(0, 300) : '', action: ci.act >= 0 ? String(r[ci.act]).slice(0, 300) : '', checked: today_() };
   });
   return withLock_(function () {
     var have = {}; readAll_('Slips').forEach(function (s) { have[s.po] = s; });
@@ -121,8 +125,7 @@ function syncMaster_() {
   var disp = function (c) { return c ? sh.getRange(hr + 1, c, n, 1).getDisplayValues().map(function (r) { return String(r[0]).trim(); }) : []; };
   var raw = function (c) { return c ? sh.getRange(hr + 1, c, n, 1).getValues().map(function (r) { return r[0]; }) : []; };
   var M = { po: disp(C.po), wh: disp(C.wh), item: disp(C.item), desc: disp(C.desc), recv: raw(C.recv), recvT: disp(C.recv), exp: disp(C.exp), expRaw: raw(C.exp), units: disp(C.units), docs: disp(C.docs), status: disp(C.status) };
-  var normPO = function (x) { return String(x).replace(/^PO\s*#?/i, '').trim(); };
-  var rowsFor = function (po, wh) { var out = []; for (var i = 0; i < n; i++) if (normPO(M.po[i]) === po && M.wh[i].toUpperCase() === wh) out.push(i); return out; };
+    var rowsFor = function (po, wh) { var out = []; for (var i = 0; i < n; i++) if (normPO(M.po[i]) === normPO(po) && M.wh[i].toUpperCase() === wh) out.push(i); return out; };
   var ctx = ctx_(), seen = 0, written = 0, previewed = 0;
   withLock_(function () {
     var st = loadState_();

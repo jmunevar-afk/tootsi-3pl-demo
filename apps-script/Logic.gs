@@ -7,6 +7,12 @@ var DELAY_OWNER = { r_notarr: 'Logistics', r_customs: 'Logistics', r_docs: 'Purc
 var REASON_EN = { r_notarr: 'Truck or container not arrived', r_customs: 'Held at port or customs', r_docs: 'Missing documents (BOL, packing list)', r_seal: 'Seal broken or missing', r_wrong: 'Wrong product or labels', r_dmg: 'Damaged load, waiting for a decision', r_dock: 'Dock full or no staff', r_other: 'Other' };
 var SLA_EN = { up: 'Upcoming', tom: 'Tomorrow', due: 'Expected today', nudge: '1 business day late', esc: '2+ business days late', paused: 'Delay reported' };
 
+/** One PO number format everywhere: "PO# 042831", "42831.0" and " 42831 " all become "42831". A split suffix stays: "41499-1". */
+function normPO(x) {
+  var s = String(x == null ? '' : x).trim().toUpperCase().replace(/^P\.?\s*O\.?\s*(NO\.?|NUMBER)?\s*#?\s*:?\s*/, '').replace(/^#\s*/, '').replace(/\.0+$/, '').replace(/\s+/g, '');
+  var m = s.match(/^0*(\d+)(-\d+)?$/);
+  return m ? m[1] + (m[2] || '') : s;
+}
 function isTPL(w) { return TPL_WH.indexOf(w) >= 0; }
 /** A shipment = what arrives together: one container, or one PO when there is no container number. */
 function shipKey(p) { return (p.wh || '?') + '|' + (p.cntr ? 'C:' + p.cntr : 'P:' + p.po); }

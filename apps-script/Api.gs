@@ -365,7 +365,11 @@ function notePOs_(lines, who, text, ctx, ext) { var seen = {}; lines.forEach(fun
 function hubLoad() {
   var me = hubUser_(), ctx = ctx_();
   var st = syncSafe_(ctx);
-  return { me: me, today: ctx.today, rows: st.pos.map(function (p) { return hubRow(p, st, ctx); }), cfg: { nudgeH: ctx.cfg.SLA_NUDGE_H || 9, escH: ctx.cfg.SLA_ESC_H || 18, portalUrl: String(ctx.cfg.PORTAL_URL || ''), goLive: String(ctx.cfg.GO_LIVE || '') } };
+  return { me: me, today: ctx.today, rows: st.pos.map(function (p) { return hubRow(p, st, ctx); }), cfg: { nudgeH: ctx.cfg.SLA_NUDGE_H || 9, escH: ctx.cfg.SLA_ESC_H || 18, portalUrl: String(ctx.cfg.PORTAL_URL || ''), goLive: String(ctx.cfg.GO_LIVE || '') }, sync: syncInfo_() };
+}
+function syncInfo_() {
+  var p = PropertiesService.getScriptProperties();
+  return { at: p.getProperty('LAST_SYNC') || '', ok: p.getProperty('LAST_SYNC_OK') !== 'no', upcomingAt: p.getProperty('UPCOMING_AT') || '' };
 }
 /** Staff uploads (BM/LY/HB receiving photos). One file per call. */
 function hubUpload(f) { var me = hubUser_(); uploadQuota_('HUB' + me); return saveIncoming_('HUB', checkFile_(f)); }
@@ -462,7 +466,7 @@ function hubAction(id, action, d) {
       case 'check': if (isTPL(p.wh) && !staffEnters3pl_()) throw new Error('3PL POs are received by the 3PL.'); return checkShipCall_(p, st, ctx, d, me);
       case 'confirmUnplanned':
         if (!p.unplannedJson || truthy(p.planOk)) throw new Error('This is not an unplanned arrival.');
-        var np = String(d.po || '').trim(); if (!/^\d{3,10}(-\d+)?$/.test(np)) throw new Error('Enter the PO number from SAP.');
+        var np = normPO(d.po); if (!/^\d{3,10}(-\d+)?$/.test(np)) throw new Error('Enter the PO number from SAP.');
         var cs = num(d.cs), lb = num(d.lbs); if (cs == null || cs < 0 || lb == null || lb < 0) throw new Error('Enter expected cases and lb.');
         // the PO may already be in the hub (no destination, or planned for another warehouse): move those lines here, no duplicate
         var planned = st.pos.filter(function (x) { return x.po === np && x.id !== p.id && !isDone(x, st); });
@@ -478,7 +482,7 @@ function hubAction(id, action, d) {
         p.po = np; p.item = String(d.item || '').trim(); p.cs = cs; p.lbs = lb; p.planOk = true; p.clockFrom = ctx.today; savePO_(p, ctx);
         note_(id, me, 'PO confirmed as ' + np + ' and added to the plan. ' + p.wh + ' can now receive it.', ctx); break;
       case 'addPO':
-        var po = String(d.po || '').trim(), item = String(d.item || '').trim();
+        var po = normPO(d.po), item = String(d.item || '').trim();
         if (!/^\d{3,10}(-\d+)?$/.test(po)) throw new Error('Enter the PO number (digits, suffix like -1 allowed).');
         if (!item || !d.desc || !d.supplier || !d.eta || OWN_WH.concat(TPL_WH).indexOf(d.wh) < 0) throw new Error('Fill in all required fields.');
         var nid = po + '|' + item; if (st.pos.some(function (x) { return x.id === nid; })) throw new Error('PO ' + po + ' item ' + item + ' is already in the hub.');

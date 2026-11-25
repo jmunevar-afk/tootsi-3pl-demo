@@ -21,7 +21,7 @@ let lang="en";const t=k=>(L.en[k])||k;const loadTxt=s=>s;
 const CONDS=[["Good","✅","c_Good"],["Shifted load","↔️","c_Shifted"],["Collapsed pallets","⬇️","c_Collapsed"],["Double-stacked","⏫","c_Double"],["Torn / leaking bags","🩹","c_Torn"],["Wet / dirty","💧","c_Wet"],["Other","❓","c_Other"]];
 const WHS=["TP","DL","BM","LY","HB"],isTPL=w=>w==="TP"||w==="DL";
 const OWNERS=["Purchasing","Logistics","QC","Receiving","Inventory Control","Fulfillment"],DECISIONS=["Pending","Refuse","Accept with reservation","Repalletize and accept"];
-const CATS=["Supplier packing list","Supplier loading report","Bill of lading","Certificate of analysis","QC report","NCR / claim","Photos","Other"];
+const CATS=["Bill of lading (BOL)","Packing slip","Receiving report / tally sheet","Delivery receipt (signed)","NCR / claim","Supplier packing list","Supplier loading report","Certificate of analysis","QC report","Photos","Other"];
 const ICON={up:"⚪",tom:"🔵",due:"🟡",nudge:"🟠",esc:"🔴",paused:"⏸"};
 let DATA=null,whF="",kpiF="",ownF="",qRaw="",view="table",welcome=true,openId=null;
 try{welcome=localStorage.getItem("pohub_welcome")!=="0"}catch(e){}
@@ -59,11 +59,13 @@ const EXP=new Set(),LV=["esc","nudge","due","paused","tom","up"],rk=r=>r.sla?LV.
 /** Lines of one shipment collapse to one row (the most urgent) unless the group is opened. */
 function groupRows(rows){const m=new Map();rows.forEach(r=>{if(!m.has(r.ship))m.set(r.ship,[]);m.get(r.ship).push(r)});const out=[];
  m.forEach((ls,k)=>{const open=EXP.has(k)||!!qRaw.trim();const sorted=ls.slice().sort((a,b)=>rk(a)-rk(b));(open?sorted:[sorted[0]]).forEach((r,i)=>out.push({r,n:i===0?ls.length:1,open}))});return out}
+function syncLine(){const s=DATA&&DATA.sync||{};if(!s.at)return "Not synced yet. Click ⇄ Sync sheets.";
+ return `${s.ok?"":"⚠️ "}Last sync ${esc(s.at)}${s.ok?"":" (the Upcoming sheet could not be read)"} · Upcoming sheet last changed ${s.upcomingAt?esc(s.upcomingAt):"unknown"} · syncs every hour`}
 function render(){
  const base=baseRows(),kf=KPIS.find(k=>k.id===kpiF),rows=base.filter(r=>!kf||kf.f(r));
  $("main").innerHTML=`${welcome?`<div class="welcome"><div style="display:flex;justify-content:space-between;gap:10px"><h3>PO Hub pilot</h3><button type="button" class="btn ghost" id="wx" style="min-height:34px;padding:4px 10px">Hide</button></div>
   <div style="font-size:13.5px">Every PO from the upcoming sheet, with the 3PL receiving, photos, counts and issues in one place. Click a PO number to see everything. Lines of the same container are grouped: click "items" to open them. The Upcoming sheet has no cases, so the 3PL count is only compared on pallets until you add <b>expected cases</b> (open a PO, then "Expected cases for all lines"). Shipments that arrived before the hub: open them and click <b>Received before the hub</b>.</div></div>`:""}
- <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><h2 style="margin:0" tabindex="-1">All POs <span class="ichip">Internal only</span></h2>
+ <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><div><h2 style="margin:0" tabindex="-1">All POs <span class="ichip">Internal only</span></h2><div class="small" id="syncline" style="margin-top:2px">${syncLine()}</div></div>
   <div style="display:flex;gap:8px;flex-wrap:wrap"><div class="view"><button type="button" data-v="table" aria-pressed="${view==="table"}" class="${view==="table"?"on":""}">Table</button><button type="button" data-v="week" aria-pressed="${view==="week"}" class="${view==="week"?"on":""}">This week</button></div>
   <button type="button" class="btn ghost" id="refresh">↻ Refresh</button><button type="button" class="btn ghost" id="syncnow" title="Pull the Upcoming sheet, Arash's packing slips and the master sheet now (also runs every hour)">⇄ Sync sheets</button><button type="button" class="btn" id="addpo">＋ Add upcoming PO</button></div></div>
  <div class="kpis">${KPIS.filter(k=>k.main).map(k=>{const n=new Set(base.filter(k.f).map(r=>k.by==="po"?r.po:r.ship)).size;return `<button type="button" class="kpi ${kpiF===k.id?"on":""} ${k.alert&&n?"alert":""}" data-k="${k.id}" aria-pressed="${kpiF===k.id}"><div class="n">${n}</div><div class="l">${k.l}</div></button>`}).join("")}</div>
