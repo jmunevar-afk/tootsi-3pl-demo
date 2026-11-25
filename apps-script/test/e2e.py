@@ -13,7 +13,7 @@ async def main():
     ok("3PL link opens on the sign-in page", await pg.locator("#lg_u").is_visible())
     ok("no PO data before sign-in", "90106" not in await pg.inner_text("body"))
     noauth=await pg.evaluate("new Promise(r=>google.script.run.withSuccessHandler(x=>r('LEAK')).withFailureHandler(e=>r(e.message)).portalLoad(''))")
-    ok("server refuses data without a session", noauth=="SESSION", noauth)
+    ok("server refuses data without a session", str(noauth).endswith("SESSION"), noauth)
     await pg.fill("#lg_u","transplus"); await pg.fill("#lg_p","wrong"); await pg.click("#lgf button[type=submit]"); await pg.wait_for_timeout(500)
     ok("wrong password refused", "incorrect" in (await pg.inner_text("#lg_err")).lower(), await pg.inner_text("#lg_err"))
     for i in range(9):
@@ -116,7 +116,7 @@ async def main():
       fid=await pg.evaluate("s=>new Promise(r=>google.script.run.withSuccessHandler(x=>r(x.fid)).portalUpload(s,{name:'a.jpg',type:'image/jpeg',data:'/9j/4AAQSkZJRgABAQ'}))",sid)
       return await pg.evaluate("a=>new Promise(r=>google.script.run.withSuccessHandler(x=>r('SAVED')).withFailureHandler(e=>r(e.message)).portalSubmitShip(a[0],'90101|10201',{recv:'2026-11-23',plt:28,cond:'Good',load:[a[1]],doc:[a[1]],lines:[{id:'90101|10201',cs:a[2],lot:'L',exp:'2027-06-01',label:[a[1]]}]}))",[sid,fid,n])
     a1=await tryCount(1); a2=await tryCount(1100)
-    ok("after 2 wrong counts, right and wrong counts get the same answer", a1==a2=="Explain the difference.", [a1,a2])
+    ok("after 2 wrong counts, right and wrong counts get the same answer", a1==a2 and a1.endswith("Explain the difference."), [a1,a2])
     fake=await pg.evaluate("s=>new Promise(r=>google.script.run.withSuccessHandler(x=>r('LEAK')).withFailureHandler(e=>r(e.message)).portalSubmitShip(s,'90101|10201',{recv:'2026-11-23',plt:28,cond:'Good',load:['inc999'],doc:['inc999'],lines:[{id:'90101|10201',cs:1100,lot:'x',exp:'2027-01-01',label:['inc999']}]}))",sid)
     ok("a file id from someone else is refused", fake!="LEAK", fake)
     priv=await pg.evaluate("new Promise(r=>google.script.run.withSuccessHandler(x=>r('LEAK')).withFailureHandler(e=>r(e.message)).readAll_('Users'))")
@@ -200,7 +200,7 @@ async def main():
     if await pg.locator("#drawer.open #x").count(): await pg.click("#x"); await pg.wait_for_timeout(300)
     await pg.click("#logout"); await pg.wait_for_timeout(600)
     ok("sign out returns to sign-in", await pg.locator("#lg_u").is_visible())
-    ok("old session is dead after sign out", await pg.evaluate("s=>new Promise(r=>google.script.run.withSuccessHandler(x=>r('LEAK')).withFailureHandler(e=>r(e.message)).portalLoad(s))",sid)=="SESSION")
+    ok("old session is dead after sign out", await pg.evaluate("s=>new Promise(r=>google.script.run.withSuccessHandler(x=>r('LEAK')).withFailureHandler(e=>r(e.message)).portalLoad(s))",sid) in ("SESSION","Error: SESSION"))
     await pg.fill("#lg_u","deslauriers"); await pg.fill("#lg_p","demo-dl"); await pg.click("#lgf button[type=submit]"); await pg.wait_for_timeout(1200)
     pos=[r["po"] for r in (await pg.evaluate("MOCK().MOCK_LAST"))["res"]["rows"]]
     ok("DL sees only DL POs", sorted(pos)==["90203","90204"], pos)

@@ -91,6 +91,6 @@ function runner(ok,fail){return new Proxy({},{get(_,p){
  if(p==="withSuccessHandler")return f=>runner(f,fail);
  if(p==="withFailureHandler")return f=>runner(ok,f);
  return(...args)=>setTimeout(()=>{try{const fn=/_$/.test(String(p))?null:window[p];if(typeof fn!=="function")throw new Error("No server function "+p);
-  const res=fn(...JSON.parse(JSON.stringify(args)));window.MOCK_LAST={fn:p,res:res===undefined?null:JSON.parse(JSON.stringify(res))};ok&&ok(res===undefined?null:JSON.parse(JSON.stringify(res)))}catch(e){fail&&fail(e)}},60)}})}
+  const res=fn(...JSON.parse(JSON.stringify(args)));window.MOCK_LAST={fn:p,res:res===undefined?null:JSON.parse(JSON.stringify(res))};ok&&ok(res===undefined?null:JSON.parse(JSON.stringify(res)))}catch(e){fail&&fail(new Error("Error: "+e.message))}},60)}})}
 window.google={script:{run:runner(null,null)}};
 })();
