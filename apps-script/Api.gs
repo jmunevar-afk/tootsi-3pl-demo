@@ -324,12 +324,14 @@ function submitShip_(p, st, ctx, f, by, ext, wh) {
   if (comment) notePOs_(lines, by, comment, ctx, ext);
   logAction_(by, 'receipt', key, lines.length + ' lines' + (askP ? ' / ' + num(f.plt) + ' plt' : '') + (bad ? ' / ' + f.cond : ''));
   Object.keys(files).forEach(function (fid) { used.put('used_' + fid, '1', 21600); });
-  queueMaster_(lines, byId, f, wh, ctx);
+  queueMaster_(lines, byId, f, isTPL(p.wh) ? p.wh : wh, ctx);
   sync_(loadState_(), ctx);
   return { ok: true, flagged: !!offAll || bad, n: lines.length, _moves: moves };
 }
 
 /** After a 3PL receipt: queue the master-sheet fills (only empty cells will ever be filled; see syncMaster_ in Jobs). */
+/** Internal pilot: Tootsi staff type in 3PL receipts from the 3PL's email (Config TPL_BY_STAFF, default yes). */
+function staffEnters3pl_() { return String(config_().TPL_BY_STAFF || 'yes').toLowerCase() !== 'no'; }
 function queueMaster_(lines, byId, f, wh, ctx) {
   if (!isTPL(wh) || !config_().MASTER_SHEET_ID || String(config_().MASTER_MODE || 'preview') === 'off') return;
   var docs = ''; try { docs = poFolder_(lines[0].id).getUrl(); } catch (e) {}
@@ -454,10 +456,10 @@ function hubAction(id, action, d) {
       case 'sap': p.sap = ctx.today; savePO_(p, ctx); note_(id, me, 'Entered in SAP / WMS', ctx); break;
       case 'note': if (String(d.text || '').trim()) note_(id, me, String(d.text).trim(), ctx); break;
       case 'doc': var f = preDoc; append_('Docs', { id: id, cat: d.cat || 'Other', name: f.name, url: f.url, by: me, at: ctx.stamp }); break;
-      case 'receive': // Tootsi receiving at BM / LY / HB, a whole shipment at once
-        if (isTPL(p.wh)) throw new Error('3PL POs are received by the 3PL.');
-        return submitShip_(p, st, ctx, d, 'Tootsi receiving (' + p.wh + ') · ' + me, false, 'HUB');
-      case 'check': if (isTPL(p.wh)) throw new Error('3PL POs are received by the 3PL.'); return checkShipCall_(p, st, ctx, d, me);
+      case 'receive': // Tootsi receiving at BM / LY / HB, or a 3PL receipt typed in by Tootsi from the 3PL's report
+        if (isTPL(p.wh) && !staffEnters3pl_()) throw new Error('3PL POs are received by the 3PL.');
+        return submitShip_(p, st, ctx, d, (isTPL(p.wh) ? 'Tootsi, from ' + p.wh + ' report' : 'Tootsi receiving (' + p.wh + ')') + ' · ' + me, false, 'HUB');
+      case 'check': if (isTPL(p.wh) && !staffEnters3pl_()) throw new Error('3PL POs are received by the 3PL.'); return checkShipCall_(p, st, ctx, d, me);
       case 'confirmUnplanned':
         if (!p.unplannedJson || truthy(p.planOk)) throw new Error('This is not an unplanned arrival.');
         var np = String(d.po || '').trim(); if (!/^\d{3,10}(-\d+)?$/.test(np)) throw new Error('Enter the PO number from SAP.');
