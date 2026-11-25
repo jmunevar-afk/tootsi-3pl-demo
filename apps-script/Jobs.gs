@@ -22,7 +22,7 @@ function importUpcoming_() {
   var v = sh.getDataRange().getValues(); if (v.length < 2) return 0;
   var h = v[0].map(function (x) { return String(x).replace(/\s+/g, ' ').trim().toLowerCase(); });
   var col = function (name) { return h.indexOf(name.replace(/\s+/g, ' ').toLowerCase()); };
-  var c = { dec: col('WH DECISION (MAJID)'), po: col('PO#'), ven: col('Vendor Name'), skid: col('#Skid'), size: col('Ship Size'), csize: col('CSize'), pltzd: col('PLTZD'), cntr: col('CNTR/TrackNum'), whs: col('WHS'), eta: col('ETA Destination'), item: col('Item No.'), desc: col('Item Description'), wt: col('Line Weight') };
+  var c = { dec: col(cfg.UPCOMING_WH_COL || 'WH DECISION (MAJID)'), po: col('PO#'), ven: col('Vendor Name'), skid: col('#Skid'), size: col('Ship Size'), csize: col('CSize'), pltzd: col('PLTZD'), cntr: col('CNTR/TrackNum'), whs: col('WHS'), eta: col('ETA Destination'), item: col('Item No.'), desc: col('Item Description'), wt: col('Line Weight') };
   if (c.po < 0 || c.item < 0) throw new Error('Could not find the PO# / Item No. columns in the upcoming sheet.');
   var lines = [];
   for (var i = 1; i < v.length; i++) {
@@ -37,9 +37,13 @@ function importUpcoming_() {
     lines.push({ id: po + '|' + item, po: po, item: item, wh: (TPL_WH.concat(OWN_WH).indexOf(whs) >= 0 ? whs : ''), desc: String(r[c.desc]).trim(), supplier: String(r[c.ven]).trim(), eta: eta,
       cntr: String(r[c.cntr] || '').trim().toUpperCase(), plt: num(r[c.skid]), lbs: num(r[c.wt]), load: load.replace(/\s+/g, ' ').trim() });
   }
+  // The warehouse is often written on the first line of a PO only. Give the other lines of that PO the same warehouse.
+  var poWh = {};
+  lines.forEach(function (L) { if (L.wh && !poWh[L.po]) poWh[L.po] = L.wh; });
   return withLock_(function () {
     var ctx = ctx_(), st = loadState_(), have = {}, added = 0, changed = 0, notesByPO = {};
-    st.pos.forEach(function (p) { have[p.id] = p; });
+    st.pos.forEach(function (p) { have[p.id] = p; if (p.wh && p.source === 'sheet' && !poWh[p.po]) poWh[p.po] = p.wh; });
+    lines.forEach(function (L) { if (!L.wh && poWh[L.po]) L.wh = poWh[L.po]; });
     lines.forEach(function (L) {
       var p = have[L.id];
       if (!p) {
