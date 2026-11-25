@@ -218,7 +218,7 @@ function needsAction(p, st, ctx) {
 }
 
 function qtyStatus(p, st, ctx) {
-  if (p.closed) return { cls: 'p-grey', t: 'Received before the hub', sub: String(p.closed) };
+  if (p.closed) return /^REMOVED/.test(String(p.closed)) ? { cls: 'p-grey', t: 'Removed', sub: String(p.closed) } : /master sheet/.test(String(p.closed)) ? { cls: 'p-done', t: 'Received (master sheet)', sub: String(p.closed) } : { cls: 'p-grey', t: 'Received before the hub', sub: String(p.closed) };
   var s = st.sub[p.id], pl = st.pl[p.id];
   if (s && diffs(p, s, ctx).length) return { cls: 'p-dmg', t: gapText(p, s, ctx) };
   if (s && num(s.cs) === 0 && num(p.cs) == null) return { cls: 'p-dmg', t: 'Did not arrive (0 cs)' };
@@ -282,7 +282,7 @@ function hubRow(p, st, ctx) {
   return {
     id: p.id, po: p.po, item: p.item, wh: p.wh, desc: p.desc, supplier: p.supplier, eta: p.eta, clockFrom: p.clockFrom, cntr: p.cntr, plt: p.plt, cs: p.cs, lbs: p.lbs, load: p.load,
     alloc: p.alloc, prodQty: p.prodQty, salesQty: p.salesQty, so: p.so, qc: p.qc, qcAt: p.qcAt, relAt: p.relAt, sap: p.sap, instrSap: p.instrSap, extra: p.extra, tplInstr: p.tplInstr,
-    source: p.source, addedBy: p.addedBy, unplanned: p.unplannedJson && !truthy(p.planOk) ? p.unplannedJson : null, nudged: p.nudged, floor: isFloor(p), isTPL: isTPL(p.wh), staff3pl: isTPL(p.wh) && String((ctx.cfg || {}).TPL_BY_STAFF || 'yes').toLowerCase() !== 'no',
+    source: p.source, addedBy: p.addedBy, unplanned: p.unplannedJson && !truthy(p.planOk) ? p.unplannedJson : null, nudged: p.nudged, floor: isFloor(p), removed: /^REMOVED/.test(String(p.closed || '')), isTPL: isTPL(p.wh), staff3pl: isTPL(p.wh) && String((ctx.cfg || {}).TPL_BY_STAFF || 'yes').toLowerCase() !== 'no',
     sla: sl, slaText: sl ? SLA_EN[sl.lvl] : '', sub: s ? subView(s) : null, hasHist: (st.hist[p.id] || []).length > 0,
     delay: st.delay[p.id] ? { reason: st.delay[p.id].reason, reasonText: REASON_EN[st.delay[p.id].reason], owner: DELAY_OWNER[st.delay[p.id].reason], note: st.delay[p.id].note, newDate: st.delay[p.id].newDate, by: st.delay[p.id].by, at: st.delay[p.id].at } : null,
     req: st.req[p.id] ? { at: st.req[p.id].at } : null,

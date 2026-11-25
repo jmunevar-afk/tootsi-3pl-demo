@@ -438,7 +438,7 @@ function checkRole_(roles, action, d, p, is) {
       if (d.qc && d.qc !== p.qc) need_(roles, 'qc');
       if ('tplInstr' in d && t(d.tplInstr) !== t(p.tplInstr)) need_(roles, 'tplInstr');
       return;
-    case 'expected': case 'expectedBulk': case 'addPO': return need_(roles, 'expected');
+    case 'expected': case 'expectedBulk': case 'addPO': case 'remove': case 'restore': return need_(roles, 'expected');
     case 'prehub': case 'reopen': return need_(roles, 'prehub');
     case 'supq': return need_(roles, 'supq');
     case 'recount': case 'nudge': return need_(roles, 'receive3pl');
@@ -495,6 +495,17 @@ function hubAction(id, action, d) {
         if (d.eta) ch.push('ETA ' + d.eta);
         note_(id, me, 'Expected data updated' + (ch.length ? ': ' + ch.join(', ') : '') + (sib.length && (d.eta || d.wh) ? ' (whole shipment, ' + (sib.length + 1) + ' lines)' : ''), ctx); break;
 
+      case 'remove': // a PO that is not coming (cancelled, moved to a later date outside the plan, duplicate). It stays on file, hidden from the lists.
+        var why = String(d.reason || '').trim(); if (why.length < 5) throw new Error('Give a reason (at least 5 characters).');
+        var rl = st.pos.filter(function (x) { return x.po === p.po && !isDone(x, st); });
+        if (!rl.length) throw new Error('Nothing to remove: every line of PO ' + p.po + ' is already received or closed.');
+        rl.forEach(function (x) { x.closed = 'REMOVED · ' + ctx.today + ' · ' + me + ' · ' + why.slice(0, 200); savePO_(x, ctx); });
+        notePOs_(rl, me, 'PO removed from the plan (' + rl.length + ' line' + (rl.length > 1 ? 's' : '') + '): ' + why, ctx); break;
+      case 'restore':
+        var sl = st.pos.filter(function (x) { return x.po === p.po && /^REMOVED/.test(String(x.closed || '')); });
+        if (!sl.length) throw new Error('This PO is not removed.');
+        sl.forEach(function (x) { x.closed = ''; var mo2 = String(x.manual || '').split(',').filter(String); if (mo2.indexOf('open') < 0) mo2.push('open'); x.manual = mo2.join(','); savePO_(x, ctx); });
+        notePOs_(sl, me, 'PO restored to the plan', ctx); break;
       case 'expectedBulk': // expected cases for several lines of the same PO in one save
         var setN = 0;
         Object.keys(d.cs || {}).forEach(function (lid) {
