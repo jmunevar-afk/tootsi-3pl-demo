@@ -205,6 +205,8 @@ async def main():
     fid=await hub.evaluate("new Promise(r=>google.script.run.withSuccessHandler(x=>r(x.fid)).hubUpload({name:'rr.jpg',type:'image/jpeg',data:'/9j/4AAQSkZJRgABAQ'}))")
     rr=await hub.evaluate("f=>new Promise(r=>google.script.run.withSuccessHandler(x=>r(x)).withFailureHandler(e=>r({err:e.message})).hubAction('90102|20087','receive',{recv:'2026-11-23',plt:20,cond:'Good',load:[],doc:[f],lines:[{id:'90102|20087',cs:400,lot:'L1',exp:'',label:[f]}]}))",fid)
     ok("staff 3PL receipt saves without expiry or load photo", isinstance(rr,dict) and rr.get("ok"), rr)
+    dr=await hub.evaluate("MOCK().MOCK_DRAFTS||[]")
+    ok("Gmail draft made for the receiving team", rr.get("draft") and dr and dr[-1]["subj"]=="PO 90102 – Receiving Documents from TP" and "hbreception@tootsi.com" in dr[-1]["to"] and "L1" in dr[-1]["html"] and ">20<" in dr[-1]["html"], [rr.get("draft"), rr.get("draftErr"), dr[-1]["subj"] if dr else None])
 
     await hub.screenshot(path="/tmp/gws_hub.png")
     await pg.screenshot(path="/tmp/gws_tp.png")

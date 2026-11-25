@@ -27,6 +27,7 @@ window.Session={getActiveUser:()=>({getEmail:()=>window.MOCK_USER||""})};
 window.LockService={getScriptLock:()=>({waitLock(){},tryLock(){return true},releaseLock(){}})};
 window.MOCK_MAIL=[];window.MailApp={sendEmail:o=>window.MOCK_MAIL.push(o)};
 window.PropertiesService={getScriptProperties:()=>{const P=window.__props=window.__props||{};return {getProperty:k=>k in P?P[k]:null,setProperty(k,v){P[k]=String(v)},setProperties(o){Object.keys(o).forEach(k=>P[k]=String(o[k]))}}}};
+window.GmailApp={createDraft:(to,subj,body,o)=>{(window.MOCK_DRAFTS=window.MOCK_DRAFTS||[]).push({to,subj,body,cc:o&&o.cc,html:o&&o.htmlBody,att:(o&&o.attachments||[]).length});return {getId:()=>"d1"}},getDrafts:()=>[]};
 window.Logger={log:()=>{}};
 
 // ---------- in-memory tables ----------

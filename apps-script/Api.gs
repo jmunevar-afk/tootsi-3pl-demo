@@ -325,20 +325,31 @@ function submitShip_(p, st, ctx, f, by, ext, wh) {
   if (comment) notePOs_(lines, by, comment, ctx, ext);
   logAction_(by, 'receipt', key, lines.length + ' lines' + (askP ? ' / ' + num(f.plt) + ' plt' : '') + (bad ? ' / ' + f.cond : ''));
   Object.keys(files).forEach(function (fid) { used.put('used_' + fid, '1', 21600); });
-  queueMaster_(lines, byId, f, isTPL(p.wh) ? p.wh : wh, ctx);
+  queueMaster_(lines, byId, f, isTPL(p.wh) ? p.wh : wh, ctx, holder);
   sync_(loadState_(), ctx);
-  return { ok: true, flagged: !!offAll || bad, n: lines.length, _moves: moves };
+  var report = fromReport ? { wh: p.wh, plt: askP ? num(f.plt) : null, holder: holder, files: Object.keys(files),
+    rows: lines.map(function (x) { var L = byId[x.id]; return { po: x.po, item: x.item, lot: String(L.lot || '').trim(), cw: caseWeight_(x, L), cs: num(L.cs), holder: x.id === holder }; }) } : null;
+  return { ok: true, flagged: !!offAll || bad, n: lines.length, _moves: moves, _report: report };
 }
 
 /** After a 3PL receipt: queue the master-sheet fills (only empty cells will ever be filled; see syncMaster_ in Jobs). */
 /** Internal pilot: Tootsi staff type in 3PL receipts from the 3PL's email (Config TPL_BY_STAFF, default yes). */
 function staffEnters3pl_() { return String(config_().TPL_BY_STAFF || 'yes').toLowerCase() !== 'no'; }
-function queueMaster_(lines, byId, f, wh, ctx) {
+/** Case weight in lb: received lb / cases, else the PO line weight / cases. 40000 lb / 1600 cases = 25. */
+function caseWeight_(x, L) {
+  var cs = num(L.cs), lb = num(L.lbs), base = lb > 0 ? lb : num(x.lbs);
+  if (!(cs > 0) || !(base > 0)) return '';
+  return String(Math.round(base / cs * 100) / 100);
+}
+function queueMaster_(lines, byId, f, wh, ctx, holder) {
   if (!isTPL(wh) || !config_().MASTER_SHEET_ID || String(config_().MASTER_MODE || 'preview') === 'off') return;
   var docs = ''; try { docs = poFolder_(lines[0].id).getUrl(); } catch (e) {}
   lines.forEach(function (x) {
     var L = byId[x.id], cs = num(L.cs); if (!(cs > 0)) return;
-    var vals = { item: x.item, desc: x.desc, recv: f.recv, exp: L.exp, units: cs, docs: docs };
+    var cw = caseWeight_(x, L), lot = String(L.lot || '').trim();
+    var vals = { item: x.item, desc: x.desc, recv: f.recv, exp: L.exp, units: cs, docs: docs,
+      plt: x.id === holder && num(f.plt) != null ? num(f.plt) : '',
+      ext: lot && cw ? x.item + ' #' + lot + '#' + x.po + '#' + cw : '' };
     Object.keys(vals).forEach(function (k) {
       if (vals[k] === '' || vals[k] == null) return;
       upsertWhere_('MasterSync', function (r) { return r.key === x.id + '|' + k; }, { key: x.id + '|' + k, at: ctx.stamp, po: x.po, item: x.item, wh: wh, field: k, value: String(vals[k]), status: 'pending', row: '' });
@@ -498,7 +509,41 @@ function hubAction(id, action, d) {
     return { ok: true };
   });
   if (out && out._moves) { finishMoves_(out._moves); delete out._moves; }
+  if (out && out._report) {
+    var rpt = out._report; delete out._report;
+    try { out.master = syncMaster_(); } catch (e) { out.master = 'error: ' + e.message; logAction_(me, 'error', 'master', e.message); }
+    try { if (String(config_().RCV_DRAFT || 'yes').toLowerCase() !== 'no') out.draft = receiptDraft_(rpt); } catch (e) { out.draftErr = e.message; logAction_(me, 'error', 'draft', e.message); }
+  }
   return out;
+}
+
+/** Gmail draft for the receiving team, like Juan's usual "PO ... – Receiving Documents from DL" email, with the photos and documents attached. */
+function receiptDraft_(r) {
+  var cfg = config_(), rows = r.rows.filter(function (x) { return x.cs > 0; });
+  if (!rows.length) return null;
+  var pos = []; rows.forEach(function (x) { if (pos.indexOf(x.po) < 0) pos.push(x.po); });
+  var subject = 'PO ' + pos.join(', ') + ' – Receiving Documents from ' + r.wh;
+  var e = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+  var th = 'border:1px solid #000;background:#ead1dc;font-weight:bold;text-align:center;padding:3px 10px;font-family:Arial;font-size:11pt';
+  var td = 'border:1px solid #000;text-align:center;padding:3px 10px;font-family:Calibri,Arial;font-size:11pt';
+  var head = ['3PL', 'Product', 'PO', 'Lot', 'Weight (LB)', 'No. Pallets', 'No. Units'];
+  var body = rows.map(function (x) { return [r.wh, x.item, x.po, x.lot, x.cw, x.holder && r.plt != null ? r.plt : (rows.length === 1 && r.plt != null ? r.plt : ''), x.cs]; });
+  var intro = 'Hi Receiving Team,<br><br>The inventory detailed below has been received from ' + e(r.wh) + '.<br>Please update the system as soon as possible with this information.<br><br>' +
+    'Additionally, please attach the enclosed receiving documents and pictures to the relevant PO, and forward them to QC for review and approval.<br><br>';
+  var table = '<table style="border-collapse:collapse"><tr>' + head.map(function (h) { return '<th style="' + th + '">' + h + '</th>'; }).join('') + '</tr>' +
+    body.map(function (b) { return '<tr>' + b.map(function (v) { return '<td style="' + td + '">' + e(v) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>';
+  var sig = String(cfg.EMAIL_SIGNATURE || 'Regards,<br><b>Juan Munevar</b><br>Spécialiste en Contrôle Inventaire / Inventory Control Specialist<br>(514) 381-9790 Ext 147');
+  var html = '<div style="font-family:Arial;font-size:10pt">' + intro + table + '<br>' + sig + '</div>';
+  var plain = 'Hi Receiving Team,\n\nThe inventory detailed below has been received from ' + r.wh + '.\nPlease update the system as soon as possible with this information.\n\n' +
+    'Additionally, please attach the enclosed receiving documents and pictures to the relevant PO, and forward them to QC for review and approval.\n\n' +
+    head.join('\t') + '\n' + body.map(function (b) { return b.join('\t'); }).join('\n') + '\n\nRegards,\nJuan Munevar';
+  var att = [], size = 0;
+  (r.files || []).forEach(function (fid) {
+    try { var b = DriveApp.getFileById(fid).getBlob(), n = b.getBytes().length; if (size + n > 20 * 1024 * 1024) return; size += n; att.push(b); } catch (x) {}
+  });
+  var d = GmailApp.createDraft(String(cfg.RCV_EMAIL_TO || 'hbreception@tootsi.com,whb1@tootsi.com'), subject, plain,
+    { cc: String(cfg.RCV_EMAIL_CC || 'mjavdany@tootsi.com,jcelis@tootsi.com'), htmlBody: html, attachments: att });
+  return { subject: subject, files: att.length, url: 'https://mail.google.com/mail/u/0/#drafts' };
 }
 function upsertSupQ_(id, kind, v, me, ctx) {
   upsertWhere_('SupplierQty', function (r) { return r.id === id && r.kind === kind; }, { id: id, kind: kind, plt: v.plt, cs: v.cs, lbs: v.lbs, by: me, at: ctx.stamp });

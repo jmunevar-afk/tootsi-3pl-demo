@@ -117,14 +117,14 @@ function syncMaster_() {
   top.forEach(function (r, i) { if (hr < 0 && r.some(function (x) { return String(x).trim() === 'PO Number'; })) hr = i + 1; });
   if (hr < 0) throw new Error('Master: header row with "PO Number" not found.');
   var head = top[hr - 1].map(function (x) { return String(x).replace(/\s+/g, ' ').trim(); }), col = function (n) { return head.indexOf(n) + 1; };
-  var C = { po: col('PO Number'), wh: col('Warehouse'), item: col('Product'), desc: col('Description'), recv: col('Receiving Date'), exp: col('Expiry Date'), units: col('Units shipped to 3PL'), docs: col('Receiving Docs'), status: col('Report Alert Status') };
+  var C = { po: col('PO Number'), wh: col('Warehouse'), item: col('Product'), desc: col('Description'), recv: col('Receiving Date'), exp: col('Expiry Date'), units: col('Units shipped to 3PL'), docs: col('Receiving Docs'), status: col('Report Alert Status'), plt: col('Pallets shipped to 3PL'), ext: col('Extended Product Code'), stock: col('Stock Status') };
   if (!C.po || !C.wh) throw new Error('Master: PO Number / Warehouse columns not found.');
   var last = sh.getLastRow(); if (last <= hr) return 0;
   var n = last - hr;
   // one read per column, everything else is compared in memory (no slow cell-by-cell reads)
   var disp = function (c) { return c ? sh.getRange(hr + 1, c, n, 1).getDisplayValues().map(function (r) { return String(r[0]).trim(); }) : []; };
   var raw = function (c) { return c ? sh.getRange(hr + 1, c, n, 1).getValues().map(function (r) { return r[0]; }) : []; };
-  var M = { po: disp(C.po), wh: disp(C.wh), item: disp(C.item), desc: disp(C.desc), recv: raw(C.recv), recvT: disp(C.recv), exp: disp(C.exp), expRaw: raw(C.exp), units: disp(C.units), docs: disp(C.docs), status: disp(C.status) };
+  var M = { po: disp(C.po), wh: disp(C.wh), item: disp(C.item), desc: disp(C.desc), recv: raw(C.recv), recvT: disp(C.recv), exp: disp(C.exp), expRaw: raw(C.exp), units: disp(C.units), docs: disp(C.docs), status: disp(C.status), plt: disp(C.plt), ext: disp(C.ext), stock: disp(C.stock) };
     var rowsFor = function (po, wh) { var out = []; for (var i = 0; i < n; i++) if (normPO(M.po[i]) === normPO(po) && M.wh[i].toUpperCase() === wh) out.push(i); return out; };
   var ctx = ctx_(), seen = 0, written = 0, previewed = 0;
   withLock_(function () {
@@ -158,11 +158,13 @@ function syncMaster_() {
       var c = C[q.field]; if (!c) { q.status = 'column not in master'; save(); return; }
       var cur = String((q.field === 'recv' ? M.recvT : M[q.field] || [])[row] || '').trim();
       q.row = String(hr + 1 + row);
+      // a row still marked "Receiving pending" holds the PLANNED date: the real receiving date replaces it
+      if (q.field === 'recv' && cur !== '' && /receiving pending/i.test(M.stock[row] || '') && !(M.recv[row] instanceof Date && Utilities.formatDate(M.recv[row], 'America/Toronto', 'yyyy-MM-dd') === String(q.value))) cur = '';
       if (cur !== '') {
         // dates are compared as dates (the master shows 23/Nov/26, the hub writes 2026-11-23)
         var rawD = q.field === 'recv' ? M.recv[row] : q.field === 'exp' ? M.expRaw[row] : null;
         var curD = rawD instanceof Date && !isNaN(rawD) ? Utilities.formatDate(rawD, 'America/Toronto', 'yyyy-MM-dd') : '';
-        var same = cur === String(q.value) || (curD && curD === String(q.value)) || (q.field === 'units' && num(cur.replace(/[^\d.]/g, '')) === num(q.value));
+        var same = cur === String(q.value) || (curD && curD === String(q.value)) || ((q.field === 'units' || q.field === 'plt') && num(cur.replace(/[^\d.]/g, '')) === num(q.value)) || (q.field === 'ext' && cur.replace(/\s+/g, '') === String(q.value).replace(/\s+/g, ''));
         q.status = same ? 'already the same' : 'differs: master has ' + cur.slice(0, 40); save(); return;
       }
       if (mode !== 'on') { q.status = 'preview: would write'; previewed++; save(); return; }
@@ -170,8 +172,8 @@ function syncMaster_() {
       if (normPO(sh.getRange(hr + 1 + row, C.po).getDisplayValue()) !== q.po) { q.status = 'master rows moved: will retry'; save(); return; }
       var v = String(q.value), m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       var val = (q.field === 'recv' || q.field === 'exp') && m ? new Date(+m[1], +m[2] - 1, +m[3])
-        : q.field === 'units' ? num(v)
-        : q.field === 'docs' && /^https:\/\/drive\.google\.com\//.test(v) ? '=HYPERLINK("' + v.replace(/"/g, '') + '","PO Hub files")'
+        : q.field === 'units' || q.field === 'plt' ? num(v)
+        : q.field === 'docs' && /^https:\/\/drive\.google\.com\//.test(v) ? '=HYPERLINK("' + v.replace(/"/g, '') + '","Docs ' + Utilities.formatDate(new Date(), 'America/Toronto', 'MMM d') + '")'
         : "'" + v; // text always as text: never a formula in Majid's sheet
       sh.getRange(hr + 1 + row, c).setValue(val);
       if (q.field === 'recv') { M.recvT[row] = v; M.recv[row] = val; } else { if (M[q.field]) M[q.field][row] = v; if (q.field === 'exp') M.expRaw[row] = val; }
