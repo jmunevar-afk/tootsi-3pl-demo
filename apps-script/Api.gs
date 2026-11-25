@@ -412,7 +412,7 @@ function hubLoad() {
 }
 function syncInfo_() {
   var p = PropertiesService.getScriptProperties();
-  return { at: p.getProperty('LAST_SYNC') || '', ok: p.getProperty('LAST_SYNC_OK') !== 'no', upcomingAt: p.getProperty('UPCOMING_AT') || '' };
+  return { at: p.getProperty('LAST_SYNC') || '', ok: p.getProperty('LAST_SYNC_OK') !== 'no', upcomingAt: p.getProperty('UPCOMING_AT') || '', sapAt: p.getProperty('SAP_REPORT_AT') || '', sapLabel: p.getProperty('SAP_REPORT_LABEL') || '' };
 }
 /** Staff uploads (BM/LY/HB receiving photos). One file per call. */
 function hubUpload(f) { var me = hubUser_(), ro = rolesOf_(me); if (!(can_(ro, 'doc') || can_(ro, 'receiveOwn') || can_(ro, 'receive3pl'))) throw new Error('Viewers cannot add files.'); uploadQuota_('HUB' + me); return saveIncoming_('HUB', checkFile_(f)); }

@@ -60,7 +60,7 @@ const EXP=new Set(),LV=["esc","nudge","due","paused","tom","up"],rk=r=>r.sla?LV.
 function groupRows(rows){const m=new Map();rows.forEach(r=>{if(!m.has(r.ship))m.set(r.ship,[]);m.get(r.ship).push(r)});const out=[];
  m.forEach((ls,k)=>{const open=EXP.has(k)||!!qRaw.trim();const sorted=ls.slice().sort((a,b)=>rk(a)-rk(b));(open?sorted:[sorted[0]]).forEach((r,i)=>out.push({r,n:i===0?ls.length:1,open}))});return out}
 function syncLine(){const s=DATA&&DATA.sync||{};if(!s.at)return "Not synced yet. Click ⇄ Sync sheets.";
- return `${s.ok?"":"⚠️ "}Last sync ${esc(s.at)}${s.ok?"":" (the Upcoming sheet could not be read)"} · Upcoming sheet last changed ${s.upcomingAt?esc(s.upcomingAt):"unknown"} · syncs every hour`}
+ return `${s.ok?"":"⚠️ "}Last sync ${esc(s.at)}${s.ok?"":" (the Upcoming sheet could not be read)"} · SAP report ${s.sapAt?esc(s.sapLabel?s.sapLabel+" ":"")+"of "+esc(s.sapAt):"not read yet"} · Upcoming sheet last changed ${s.upcomingAt?esc(s.upcomingAt):"unknown"} · syncs every hour`}
 function render(){if(showRem&&!DATA.rows.some(r=>r.removed))showRem=false;
  const base=baseRows(),kf=KPIS.find(k=>k.id===kpiF),rows=base.filter(r=>!kf||kf.f(r));
  $("main").innerHTML=`${welcome?`<div class="welcome"><div style="display:flex;justify-content:space-between;gap:10px"><h3>PO Hub pilot</h3><button type="button" class="btn ghost" id="wx" style="min-height:34px;padding:4px 10px">Hide</button></div>
@@ -95,7 +95,7 @@ function render(){if(showRem&&!DATA.rows.some(r=>r.removed))showRem=false;
  const c=$("clr");if(c)c.onclick=()=>{kpiF=whF=ownF=qRaw="";render()};
  const qi=$("q");qi.oninput=e=>{qRaw=e.target.value;clearTimeout(qi.t);qi.t=setTimeout(()=>{render();const n=$("q");n.focus();n.setSelectionRange(n.value.length,n.value.length)},250)};
  const rt0=$("remtog");if(rt0)rt0.onclick=()=>{showRem=!showRem;render()};$("addpo").onclick=openAddPO;if(!CAN("expected"))$("addpo").style.display="none";$("refresh").onclick=load;
- $("syncnow").onclick=async()=>{busy(true);try{const r=await call("hubAction","","syncNow",{});await load();const s=r.sync||{};toast("Synced. Upcoming: "+s.upcoming+" new · slips: "+s.slips+" updated · master: "+(typeof s.master==="object"?(s.master.closed?s.master.closed+" marked received, ":"")+s.master.seen+" seen, "+s.master.preview+" to fill (preview), "+s.master.written+" written":s.master))}catch(e){toast(e.message)}busy(false)};const wx=$("wx");if(wx)wx.onclick=()=>{welcome=false;try{localStorage.setItem("pohub_welcome","0")}catch(e){}render()};
+ $("syncnow").onclick=async()=>{busy(true);try{const r=await call("hubAction","","syncNow",{});await load();const s=r.sync||{};toast("Synced. Upcoming: "+s.upcoming+" new · SAP report: "+(typeof s.sap==="object"?s.sap.added+" new, "+s.sap.updated+" updated":s.sap)+" · slips: "+s.slips+" updated · master: "+(typeof s.master==="object"?(s.master.closed?s.master.closed+" marked received, ":"")+s.master.seen+" seen, "+s.master.preview+" to fill (preview), "+s.master.written+" written":s.master))}catch(e){toast(e.message)}busy(false)};const wx=$("wx");if(wx)wx.onclick=()=>{welcome=false;try{localStorage.setItem("pohub_welcome","0")}catch(e){}render()};
 }
 
 // ---------- roles: each department edits its own part, the rest is read-only ----------

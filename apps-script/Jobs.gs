@@ -57,7 +57,7 @@ function importUpcoming_() {
       var manual = String(p.manual || '').split(','), diff = [];
       ['eta', 'wh', 'cntr', 'plt', 'lbs', 'load'].forEach(function (k) {
         var nv = L[k] == null ? '' : L[k], ov = p[k] == null ? '' : p[k];
-        if (manual.indexOf(k) >= 0 || nv === '' || String(nv) === String(ov)) return;
+        if (manual.indexOf(k) >= 0 || manual.indexOf(k + '@sap') >= 0 || nv === '' || String(nv) === String(ov)) return; // SAP report wins over the sheet
         diff.push(k + ' ' + (ov === '' ? '(blank)' : ov) + ' → ' + nv); p[k] = nv;
       });
       if (diff.length) { savePO_(p, ctx); (notesByPO[p.po] = notesByPO[p.po] || { id: p.id, d: {} }); diff.forEach(function (t) { notesByPO[p.po].d[t] = true; }); changed++; }
@@ -74,6 +74,7 @@ function syncSources(e) { requireOwner_(e); return syncSources_(); }
 function syncSources_() {
   var out = {};
   try { out.upcoming = importUpcoming_(); } catch (err) { out.upcoming = 'error: ' + err.message; logAction_('Sync', 'error', 'upcoming', err.message); }
+  try { out.sap = importSapReport_(); } catch (err) { out.sap = 'error: ' + err.message; logAction_('Sync', 'error', 'sap', err.message); }
   try { out.slips = importSlips_(); } catch (err) { out.slips = 'error: ' + err.message; logAction_('Sync', 'error', 'slips', err.message); }
   try { out.master = syncMaster_(); } catch (err) { out.master = 'error: ' + err.message; logAction_('Sync', 'error', 'master', err.message); }
   // "last synced" for the hub header, and when the Upcoming sheet itself last changed (how fresh the ETAs are)
@@ -81,6 +82,80 @@ function syncSources_() {
   try { var id = config_().UPCOMING_SHEET_ID; if (id) info.UPCOMING_AT = Utilities.formatDate(DriveApp.getFileById(id).getLastUpdated(), 'America/Toronto', 'yyyy-MM-dd HH:mm'); } catch (e) {}
   PropertiesService.getScriptProperties().setProperties(info);
   return out;
+}
+
+/**
+ * SAP "Upcoming Deliveries to Tootsi" report (SAP server email, 10 AM and 3 PM, in the hub owner's inbox).
+ * It has what the FTL FCL sheet lacks: the warehouse on every line, the cases, and LTL / LCL deliveries.
+ * It looks only ~2 days ahead, so it confirms and completes the sheet; it never removes anything.
+ * Fields it sets are marked "<field>@sap" so the sheet import does not put the old value back.
+ * A field someone changed by hand in the hub is never touched.
+ */
+function importSapReport_() {
+  var cfg = config_(); if (String(cfg.SAP_REPORT || 'yes').toLowerCase() === 'no') return 'off';
+  var q = String(cfg.SAP_REPORT_QUERY || 'from:sap@tootsi.com subject:"Upcoming Deliveries to Tootsi" newer_than:3d');
+  var threads = GmailApp.search(q, 0, 10), msgs = [];
+  threads.forEach(function (t) { t.getMessages().forEach(function (m) { if (/Upcoming Deliveries to Tootsi/i.test(m.getSubject())) msgs.push(m); }); });
+  if (!msgs.length) return 'no report';
+  msgs.sort(function (a, b) { return b.getDate() - a.getDate(); });
+  var msg = msgs[0], props = PropertiesService.getScriptProperties();
+  var when = Utilities.formatDate(msg.getDate(), 'America/Toronto', 'yyyy-MM-dd HH:mm'), label = (String(msg.getSubject()).match(/\(([^)]+)\)/) || [, ''])[1];
+  var rows = parseSapReport_(msg.getBody());
+  if (!rows.length) throw new Error('SAP report of ' + when + ': no table found.');
+  var res = applySapRows_(rows, when, label);
+  props.setProperties({ SAP_REPORT_AT: when, SAP_REPORT_LABEL: label, SAP_REPORT_LINES: String(rows.length) });
+  return res;
+}
+/** The report is an HTML table: header row, then one row per PO line. */
+function parseSapReport_(html) {
+  var cell = function (s) { return String(s).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim(); };
+  var trs = String(html).match(/<tr[\s\S]*?<\/tr>/gi) || [], head = null, out = [];
+  trs.forEach(function (tr) {
+    var tds = (tr.match(/<td[\s\S]*?<\/td>/gi) || []).map(cell);
+    if (!head) { if (tds.some(function (x) { return /^PO#$/i.test(x); })) head = tds.map(function (x) { return x.toLowerCase(); }); return; }
+    if (tds.length < head.length - 1) return;
+    var o = {}; head.forEach(function (h, i) { o[h] = tds[i] == null ? '' : tds[i]; }); out.push(o);
+  });
+  var dash = function (v) { v = String(v || '').trim(); return v === '-' ? '' : v; };
+  var n = function (v) { v = dash(v).replace(/,/g, ''); return v === '' || isNaN(Number(v)) ? null : Number(v); };
+  return out.map(function (o) {
+    var d = dash(o['planned delivery']).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    var size = dash(o['ship size']), csize = dash(o['csize']), pal = dash(o['pltzd']) === '1';
+    var load = size ? (size === 'FCL' ? 'FCL ' + csize : size) + ' · ' + (size === 'FCL' && !pal ? 'Floor loaded' : 'Palletized') : '';
+    return { po: normPO(o['po#']), item: dash(o['item code']), supplier: dash(o['name']), desc: dash(o['item description']),
+      cs: n(o['item quantity']), lbs: n(o['item total weight(lb)']), plt: n(o['#skid']), load: load.replace(/\s+/g, ' ').trim(),
+      cntr: dash(o['cntr/tracknum']).toUpperCase(), wh: dash(o['whs']).toUpperCase(), eta: d ? d[3] + '-' + ('0' + d[2]).slice(-2) + '-' + ('0' + d[1]).slice(-2) : '' };
+  }).filter(function (r) { return /^\d{3,10}(-\d+)?$/.test(r.po) && r.item; });
+}
+function applySapRows_(rows, when, label) {
+  var WH = TPL_WH.concat(OWN_WH);
+  return withLock_(function () {
+    var ctx = ctx_(), st = loadState_(), have = {}, added = 0, changed = 0, notesByPO = {};
+    st.pos.forEach(function (p) { have[p.id] = p; });
+    rows.forEach(function (r) {
+      var id = r.po + '|' + r.item, p = have[id], wh = WH.indexOf(r.wh) >= 0 ? r.wh : '';
+      if (!p) {
+        var np = { id: id, po: r.po, item: r.item, wh: wh, desc: r.desc, supplier: r.supplier, eta: r.eta, cntr: r.cntr, plt: r.plt == null ? '' : r.plt,
+          cs: r.cs == null ? '' : r.cs, lbs: r.lbs ? r.lbs : '', load: r.load, qc: 'Not received', source: 'sap', addedBy: 'SAP report' };
+        append_('POs', np); have[id] = np; added++;
+        (notesByPO[r.po] = notesByPO[r.po] || { id: id, d: {} }).d['added from the SAP report (' + (r.load || 'delivery') + ', ' + (wh || 'no WHS') + ')'] = true;
+        return;
+      }
+      if (st.sub[p.id] || p.closed) return; // received, removed or closed: the report never reopens a line
+      var man = String(p.manual || '').split(',').filter(String), diff = [];
+      var set = function (k, nv) {
+        if (nv == null || nv === '' || man.indexOf(k) >= 0) return; // empty in SAP, or changed by hand in the hub
+        if (String(nv) === String(p[k] == null ? '' : p[k])) return;
+        diff.push(k + ' ' + (p[k] === '' || p[k] == null ? '(blank)' : p[k]) + ' → ' + nv); p[k] = nv; if (man.indexOf(k + '@sap') < 0) man.push(k + '@sap');
+      };
+      set('wh', wh); set('cs', r.cs); set('eta', r.eta); set('cntr', r.cntr);
+      if (r.lbs) set('lbs', r.lbs); if (r.plt != null) set('plt', r.plt);
+      if (diff.length) { p.manual = man.join(','); savePO_(p, ctx); (notesByPO[p.po] = notesByPO[p.po] || { id: p.id, d: {} }); diff.forEach(function (t) { notesByPO[p.po].d[t] = true; }); changed++; }
+    });
+    Object.keys(notesByPO).forEach(function (po) { note_(notesByPO[po].id, 'SAP report', 'SAP ' + (label || 'report') + ' ' + when + ': ' + Object.keys(notesByPO[po].d).join(', '), ctx); });
+    if (added || changed) { logAction_('Import', 'importSapReport', when, added + ' new PO lines, ' + changed + ' updated'); sync_(loadState_(), ctx); }
+    return { lines: rows.length, added: added, updated: changed, report: when };
+  });
 }
 
 /** Packing slips: Arash's extractor keeps a "PO Status" tab (PO, FOUND/MISSING, file link, action). Copy it into the Slips tab. */
