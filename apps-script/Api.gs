@@ -507,7 +507,7 @@ function hubAction(id, action, d) {
         var pl2 = openLines_(p, st); if (!pl2.length) throw new Error('Nothing left to close.');
         pl2.forEach(function (x) { x.closed = ctx.today + ' · ' + me; savePO_(x, ctx); });
         notePOs_(pl2, me, 'Marked as received before the hub (' + pl2.length + ' line' + (pl2.length > 1 ? 's' : '') + '). No 3PL receiving expected.', ctx); break;
-      case 'reopen': if (!p.closed) throw new Error('Not closed.'); p.closed = ''; savePO_(p, ctx); note_(id, me, 'Reopened: receiving expected again', ctx); break;
+      case 'reopen': if (!p.closed) throw new Error('Not closed.'); p.closed = ''; var mo = String(p.manual || '').split(',').filter(String); if (mo.indexOf('open') < 0) mo.push('open'); p.manual = mo.join(','); savePO_(p, ctx); note_(id, me, 'Reopened: receiving expected again', ctx); break;
       case 'supq': // packing list / loading report quantities
         var v = { plt: num(d.plt), cs: num(d.cs), lbs: num(d.lbs) };
         if (v.cs == null || v.cs < 0 || (v.plt != null && v.plt < 0) || (v.lbs != null && v.lbs < 0)) throw new Error('Enter the cases (pallets and lb are optional).');

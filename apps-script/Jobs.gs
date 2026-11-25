@@ -126,7 +126,7 @@ function syncMaster_() {
   var raw = function (c) { return c ? sh.getRange(hr + 1, c, n, 1).getValues().map(function (r) { return r[0]; }) : []; };
   var M = { po: disp(C.po), wh: disp(C.wh), item: disp(C.item), desc: disp(C.desc), recv: raw(C.recv), recvT: disp(C.recv), exp: disp(C.exp), expRaw: raw(C.exp), units: disp(C.units), docs: disp(C.docs), status: disp(C.status), plt: disp(C.plt), ext: disp(C.ext), stock: disp(C.stock) };
     var rowsFor = function (po, wh) { var out = []; for (var i = 0; i < n; i++) if (normPO(M.po[i]) === normPO(po) && M.wh[i].toUpperCase() === wh) out.push(i); return out; };
-  var ctx = ctx_(), seen = 0, written = 0, previewed = 0;
+  var ctx = ctx_(), seen = 0, written = 0, previewed = 0, closedN = 0, autoClose = String(cfg.MASTER_AUTOCLOSE || 'yes').toLowerCase() !== 'no';
   withLock_(function () {
     var st = loadState_();
     // READ: the master's "Receiving Date" often holds a PLANNED date, so trust a row only when it really looks received:
@@ -144,6 +144,12 @@ function syncMaster_() {
         }
       }
       if (ds && (!have[p.id] || have[p.id].recv !== ds)) { upsert_('MasterSeen', 'id', { id: p.id, recv: ds, row: String(hr + 1 + hit), checked: ctx.today }); seen++; }
+      // the master shows it received (units + a real date): the hub marks the line received too, unless someone reopened it by hand
+      if (ds && autoClose && String(p.manual || '').split(',').indexOf('open') < 0) {
+        p.closed = ds + ' · received per master sheet (row ' + (hr + 1 + hit) + ', ' + M.units[hit] + ' units)';
+        if (!p.qc || p.qc === 'Not received') { p.qc = 'Locked'; p.qcAt = ds; }
+        savePO_(p, ctx); note_(p.id, 'Master sheet', 'Received at ' + p.wh + ' on ' + ds + ': ' + M.units[hit] + ' units in the master sheet (row ' + (hr + 1 + hit) + ').', ctx); closedN++;
+      }
       if (!ds && have[p.id]) deleteWhere_('MasterSeen', function (r) { return r.id === p.id; });
     });
     // WRITE: only NEW items each hour (pending), plus the previewed ones when MASTER_MODE is switched to on
@@ -180,7 +186,7 @@ function syncMaster_() {
       q.status = 'written'; written++; save();
     });
   });
-  return { seen: seen, written: written, preview: previewed };
+  return { seen: seen, written: written, preview: previewed, closed: closedN };
 }
 
 function dailyJob(e) {
