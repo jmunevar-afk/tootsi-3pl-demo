@@ -264,7 +264,7 @@ function palletHolder_(lines, st) {
  * (see finishMoves_), so a big container never blocks other users and a failure never leaves half a receipt.
  */
 function submitShip_(p, st, ctx, f, by, ext, wh) {
-  var lines = openLines_(p, st), key = shipKey(p);
+  var lines = openLines_(p, st), key = shipKey(p), fromReport = isTPL(p.wh) && wh === 'HUB';
   if (!lines.length) throw new Error('Already received. Contact Tootsi Inventory Control to change it.');
   var byId = {}; (f.lines || []).forEach(function (L) { byId[L.id] = L; });
   if (lines.some(function (x) { return !byId[x.id]; })) throw new Error('Enter every item of this shipment (0 cases if an item did not come).');
@@ -274,13 +274,14 @@ function submitShip_(p, st, ctx, f, by, ext, wh) {
   lines.forEach(function (x) {
     var L = byId[x.id], cs = num(L.cs), lb = num(L.lbs);
     if (cs == null || cs < 0 || cs > 1000000 || (lb != null && (lb < 0 || lb > 200000))) throw new Error('Enter cases (0 or more) for item ' + x.item + '.');
-    if (cs > 0 && (!String(L.lot || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(L.exp || '')) || L.exp <= f.recv || L.exp > addDays(f.recv, 3660))) throw new Error('Lot and expiry are required for item ' + x.item + '. Expiry must be after the date received.');
+    var expOk = L.exp ? (/^\d{4}-\d{2}-\d{2}$/.test(String(L.exp)) && L.exp > f.recv && L.exp <= addDays(f.recv, 3660)) : fromReport; // expiry optional when Tootsi types in a 3PL report
+    if (cs > 0 && (!String(L.lot || '').trim() || !expOk)) throw new Error('Lot and expiry are required for item ' + x.item + '. Expiry must be after the date received.');
     if (cs > 0 && !(L.label || []).length) throw new Error('Label photo missing for item ' + x.item + '.');
   });
   if (!f.cond) throw new Error('Choose the load condition.');
   var bad = f.cond !== 'Good';
   if (bad && String(f.dmgText || '').trim().length < 10) throw new Error('Describe the damage.');
-  var fresh = shipFresh(p, st); // the "before unloading" photo only makes sense on the first receiving
+  var fresh = shipFresh(p, st) && !fromReport; // the "before unloading" photo only makes sense on the first receiving
   if ((fresh && !(f.load || []).length) || !(f.doc || []).length || (bad && !(f.dmg || []).length)) throw new Error('Photos and documents are missing.');
   // 1. every photo must be a real upload of this warehouse (checked BEFORE the count, so a fake submit learns nothing)
   var files = {}, verify = function (ids) { return (ids || []).slice(0, 20).map(function (fid) { if (!files[fid]) files[fid] = verifyFile_(fid, wh); return files[fid]; }); };

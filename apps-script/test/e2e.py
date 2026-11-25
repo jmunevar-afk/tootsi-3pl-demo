@@ -201,6 +201,11 @@ async def main():
     ok("hub shows the last sync time", "Last sync" in await hub.inner_text("#syncline"), await hub.inner_text("#syncline"))
     await hub.click("[data-v='week']"); await hub.wait_for_timeout(300)
     ok("week board renders", await hub.locator(".week .wcol").count()==7)
+    # staff types in a TP receipt from the 3PL report: no expiry, no "before unloading" photo
+    fid=await hub.evaluate("new Promise(r=>google.script.run.withSuccessHandler(x=>r(x.fid)).hubUpload({name:'rr.jpg',type:'image/jpeg',data:'/9j/4AAQSkZJRgABAQ'}))")
+    rr=await hub.evaluate("f=>new Promise(r=>google.script.run.withSuccessHandler(x=>r(x)).withFailureHandler(e=>r({err:e.message})).hubAction('90102|20087','receive',{recv:'2026-11-23',plt:20,cond:'Good',load:[],doc:[f],lines:[{id:'90102|20087',cs:400,lot:'L1',exp:'',label:[f]}]}))",fid)
+    ok("staff 3PL receipt saves without expiry or load photo", isinstance(rr,dict) and rr.get("ok"), rr)
+
     await hub.screenshot(path="/tmp/gws_hub.png")
     await pg.screenshot(path="/tmp/gws_tp.png")
     # sign out, then DL signs in on the same phone and sees only DL
