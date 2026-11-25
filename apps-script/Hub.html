@@ -29,7 +29,7 @@ let HUBLINES=[];
 const RCV={expOpt:r=>!!(r&&r.fromReport),title:"Tootsi receiving",nextLabel:"Back to the PO",lines:()=>HUBLINES,askP:r=>!!r.askP,fresh:r=>!!r.fresh,upload:f=>call("hubUpload",f),
  check:(r,c)=>call("hubAction",r.id,"check",c),submit:(r,pl)=>call("hubAction",r.id,"receive",pl),after:async(r)=>{await load();openPO(r.id)}};
 
-async function load(){try{ensureReceive(i=>call("hubDiag",i));DATA=await call("hubLoad");$("uname").textContent=DATA.me;const tv=$("tplview");if(DATA.cfg&&DATA.cfg.portalUrl){tv.href=DATA.cfg.portalUrl+(DATA.cfg.portalUrl.indexOf("?")<0?"?":"&")+"view=3pl";tv.style.display=""}render()}catch(e){$("main").innerHTML=`<div class="err">${esc(e.message)}</div>`}}
+async function load(){try{ensureReceive(i=>call("hubDiag",i));DATA=await call("hubLoad");$("uname").textContent=DATA.me+(DATA.roles?" · "+DATA.roles.join(", "):"");const tv=$("tplview");if(DATA.cfg&&DATA.cfg.portalUrl){tv.href=DATA.cfg.portalUrl+(DATA.cfg.portalUrl.indexOf("?")<0?"?":"&")+"view=3pl";tv.style.display=""}render()}catch(e){$("main").innerHTML=`<div class="err">${esc(e.message)}</div>`}}
 const slaPill=r=>r.sla?`<span class="sla sla-${r.sla.lvl}" ${r.sla.h?`title="${r.sla.h} business hours"`:""}><span aria-hidden="true">${ICON[r.sla.lvl]}</span> ${esc(r.slaText)}</span>`:"";
 const late=r=>r.sla&&(r.sla.lvl==="nudge"||r.sla.lvl==="esc");
 const allocPill=r=>r.alloc?`<span class="pill ${r.alloc==="Production"?"a-prod":r.alloc==="Sales"?"p-done":"p-todo"}">${esc(r.alloc)}${r.alloc==="Split"?(r.prodQty!==""?` ${fmt(r.prodQty)}/${fmt(r.salesQty)}`:" (set qty)"):""}</span>`:`<span class="pill p-dmg">Not set</span>`;
@@ -94,9 +94,30 @@ function render(){
  $("more").onchange=e=>{kpiF=e.target.value;render()};$("ownF").onchange=e=>{ownF=e.target.value;render()};
  const c=$("clr");if(c)c.onclick=()=>{kpiF=whF=ownF=qRaw="";render()};
  const qi=$("q");qi.oninput=e=>{qRaw=e.target.value;clearTimeout(qi.t);qi.t=setTimeout(()=>{render();const n=$("q");n.focus();n.setSelectionRange(n.value.length,n.value.length)},250)};
- $("addpo").onclick=openAddPO;$("refresh").onclick=load;
+ $("addpo").onclick=openAddPO;if(!CAN("expected"))$("addpo").style.display="none";$("refresh").onclick=load;
  $("syncnow").onclick=async()=>{busy(true);try{const r=await call("hubAction","","syncNow",{});await load();const s=r.sync||{};toast("Synced. Upcoming: "+s.upcoming+" new · slips: "+s.slips+" updated · master: "+(typeof s.master==="object"?s.master.seen+" seen, "+s.master.preview+" to fill (preview), "+s.master.written+" written":s.master))}catch(e){toast(e.message)}busy(false)};const wx=$("wx");if(wx)wx.onclick=()=>{welcome=false;try{localStorage.setItem("pohub_welcome","0")}catch(e){}render()};
 }
+
+// ---------- roles: each department edits its own part, the rest is read-only ----------
+function CAN(k){return !DATA||!DATA.can||DATA.can[k]!==false}
+function lockByRole(r,tp,is){
+ const off=(sel,why)=>document.querySelectorAll(sel).forEach(el=>{el.disabled=true;el.setAttribute("aria-disabled","true");if(why)el.title=why}),
+  hide=sel=>document.querySelectorAll(sel).forEach(el=>el.style.display="none");
+ if(!CAN("alloc"))off('[data-a],#a_prod,#a_sales,#a_so,#a_extra',"Only Purchasing can change this");
+ if(!CAN("qc"))off("#a_qc","Only QC can change this");
+ if(!CAN("tplInstr"))off("#a_tpl","Only Inventory Control or Purchasing can change this");
+ if(!CAN("alloc")&&!CAN("qc")&&!CAN("tplInstr"))hide("#a_save");
+ if(!CAN("expected")){off('#e_plt,#e_cs,#e_lbs,#e_wh,#e_eta,[data-bc]',"Only Logistics, Purchasing or Inventory Control can change this");hide("#e_save,#bc_save")}
+ if(!CAN("supq")){off('[id^="pl_"],[id^="lr_"]',"Only Purchasing or Inventory Control can change this");hide("[data-saveq]")}
+ if(!(tp?CAN("receive3pl"):CAN("receiveOwn")))hide("#recvown,#recvtop");
+ if(!CAN("prehub"))hide("#prehub,#reopen");
+ if(!CAN("sap"))hide("#sapbtn");
+ if(!CAN("receive3pl"))hide("#askre,#nudge");
+ if(!CAN("unplanned"))hide("#up_ok");
+ if(!CAN("doc"))hide('label:has(#i_file)');
+ if(is&&!CAN("issue")&&!(DATA.roles||[]).includes(is.owner))off("#is_owner,#is_urg,#is_st,#is_dec,#is_decn","Only Inventory Control or "+is.owner+" can change this issue");
+ const db=document.querySelector("#drawer .db");if(db&&DATA.roles&&!DATA.roles.includes("Admin")){const n=document.createElement("div");n.className="small";n.style.margin="0 0 10px";
+  n.textContent="Your role: "+DATA.roles.join(", ")+". You can see everything. Fields of other departments are read-only.";db.prepend(n)}}
 
 // ---------- PO page ----------
 async function act(id,action,d,msg){busy(true);try{await call("hubAction",id,action,d||{});await Promise.all([load(),id?openPO(id,true):null]);if(msg)toast(msg)}catch(e){toast(e.message);const er=$("d_err");if(er)er.textContent=e.message}busy(false)}
@@ -166,6 +187,7 @@ async function openPO(id,keepScroll){openId=id;const y=keepScroll&&$("drawer").c
    <div style="display:flex;gap:8px;margin-top:8px"><label for="n_txt" class="sr">Note</label><input class="in" id="n_txt" placeholder="Write a note for everyone on this PO…"><button type="button" class="btn" id="n_add">Post</button></div></details>
  </div>`);
  $("drawer").scrollTop=y;
+ lockByRole(r,tp,is);
  const v=id2=>{const el=$(id2);return el?el.value:""};
  document.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-a]").forEach(x=>{x.classList.toggle("on",x===b);x.setAttribute("aria-pressed",x===b)});$("splitbox").style.display=b.dataset.a==="Split"?"":"none";if(b.dataset.a!=="Split")$("a_save").click()});
  const sv=$("a_save");if(sv)sv.onclick=()=>{const a=(document.querySelector("[data-a].on")||{dataset:{a:""}}).dataset.a;act(id,"who",{alloc:a,prodQty:v("a_prod"),salesQty:v("a_sales"),so:v("a_so"),qc:v("a_qc"),extra:v("a_extra"),...($("a_tpl")?{tplInstr:v("a_tpl")}:{})},"Saved.")};

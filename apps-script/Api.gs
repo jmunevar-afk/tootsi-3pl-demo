@@ -11,6 +11,37 @@ function hubUser_() {
   if (!email || email.split('@')[1] !== dom) throw new Error('Access denied. Sign in with your @' + dom + ' Google account.');
   return email;
 }
+// ---------- roles: each department edits its own part of a PO; everyone sees everything ----------
+// Config keys ROLE_<Dept> hold comma-separated emails. The script owner is always Admin. Anyone else in the domain is a Viewer.
+var ROLES = ['Admin', 'Purchasing', 'Logistics', 'Receiving', 'QC', 'Fulfillment', 'InventoryControl'];
+var ROLE_LABEL = { Admin: 'Admin', Purchasing: 'Purchasing', Logistics: 'Logistics', Receiving: 'Receiving', QC: 'QC', Fulfillment: 'Fulfillment', InventoryControl: 'Inventory Control', Viewer: 'Viewer' };
+var CAN = {
+  alloc: ['Purchasing'],                                   // production / sales / split, sales order, extra packaging conditions
+  qc: ['QC'],                                              // QC status
+  tplInstr: ['InventoryControl', 'Purchasing'],            // the text the 3PL sees
+  expected: ['Logistics', 'Purchasing', 'InventoryControl'], // expected qty, destination, ETA, add a PO
+  supq: ['Purchasing', 'InventoryControl'],                // supplier packing list / loading report numbers
+  receiveOwn: ['Receiving', 'InventoryControl'],           // receiving at BM / LY / HB
+  receive3pl: ['InventoryControl'],                        // TP / DL receipts, recount, nudge
+  prehub: ['Receiving', 'InventoryControl'],               // received before the hub / reopen
+  sap: ['Receiving', 'InventoryControl'],                  // entered in SAP / WMS
+  issue: ['InventoryControl'],                             // plus the department that owns the issue
+  unplanned: ['InventoryControl', 'Purchasing'],           // confirm a PO that arrived without notice
+  doc: ['Purchasing', 'Logistics', 'Receiving', 'QC', 'Fulfillment', 'InventoryControl']
+};
+var CAN_WHO = { alloc: 'Purchasing', qc: 'QC', tplInstr: 'Inventory Control or Purchasing', expected: 'Logistics, Purchasing or Inventory Control', supq: 'Purchasing or Inventory Control',
+  receiveOwn: 'Receiving or Inventory Control', receive3pl: 'Inventory Control', prehub: 'Receiving or Inventory Control', sap: 'Receiving or Inventory Control', issue: 'Inventory Control or the owner department',
+  unplanned: 'Inventory Control or Purchasing', doc: 'a department member' };
+function rolesOf_(email) {
+  var cfg = config_(), e = String(email || '').toLowerCase(), out = [];
+  if (e && e === String(Session.getEffectiveUser().getEmail() || '').toLowerCase()) return ['Admin'];
+  ROLES.forEach(function (r) { var list = String(cfg['ROLE_' + r] || '').toLowerCase().split(/[,;\s]+/); if (list.indexOf(e) >= 0) out.push(r); });
+  return out.length ? out : ['Viewer'];
+}
+function can_(roles, cap) { return roles.indexOf('Admin') >= 0 || (CAN[cap] || []).some(function (r) { return roles.indexOf(r) >= 0; }); }
+function need_(roles, cap) { if (!can_(roles, cap)) throw new Error('Only ' + (CAN_WHO[cap] || 'another department') + ' can change this. Your role: ' + roles.map(function (r) { return ROLE_LABEL[r] || r; }).join(', ') + '.'); }
+function capsOf_(roles) { var o = {}; Object.keys(CAN).forEach(function (k) { o[k] = can_(roles, k); }); return o; }
+
 /**
  * 3PL access. A 3PL signs in with a username and password (Users tab).
  * The server gives back a session code that lasts SESSION_HOURS (default 12 h, one shift).
@@ -377,14 +408,14 @@ function notePOs_(lines, who, text, ctx, ext) { var seen = {}; lines.forEach(fun
 function hubLoad() {
   var me = hubUser_(), ctx = ctx_();
   var st = syncSafe_(ctx);
-  return { me: me, today: ctx.today, rows: st.pos.map(function (p) { return hubRow(p, st, ctx); }), cfg: { nudgeH: ctx.cfg.SLA_NUDGE_H || 9, escH: ctx.cfg.SLA_ESC_H || 18, portalUrl: String(ctx.cfg.PORTAL_URL || ''), goLive: String(ctx.cfg.GO_LIVE || '') }, sync: syncInfo_() };
+  return { me: me, today: ctx.today, rows: st.pos.map(function (p) { return hubRow(p, st, ctx); }), cfg: { nudgeH: ctx.cfg.SLA_NUDGE_H || 9, escH: ctx.cfg.SLA_ESC_H || 18, portalUrl: String(ctx.cfg.PORTAL_URL || ''), goLive: String(ctx.cfg.GO_LIVE || '') }, sync: syncInfo_(), roles: rolesOf_(me).map(function (r) { return ROLE_LABEL[r] || r; }), can: capsOf_(rolesOf_(me)) };
 }
 function syncInfo_() {
   var p = PropertiesService.getScriptProperties();
   return { at: p.getProperty('LAST_SYNC') || '', ok: p.getProperty('LAST_SYNC_OK') !== 'no', upcomingAt: p.getProperty('UPCOMING_AT') || '' };
 }
 /** Staff uploads (BM/LY/HB receiving photos). One file per call. */
-function hubUpload(f) { var me = hubUser_(); uploadQuota_('HUB' + me); return saveIncoming_('HUB', checkFile_(f)); }
+function hubUpload(f) { var me = hubUser_(), ro = rolesOf_(me); if (!(can_(ro, 'doc') || can_(ro, 'receiveOwn') || can_(ro, 'receive3pl'))) throw new Error('Viewers cannot add files.'); uploadQuota_('HUB' + me); return saveIncoming_('HUB', checkFile_(f)); }
 /** At most 200 uploads per hour per warehouse, so nobody can fill the Drive. */
 function uploadQuota_(who) {
   var c = CacheService.getScriptCache(), k = 'upq_' + who + '_' + Utilities.formatDate(new Date(), 'America/Toronto', 'yyyyMMddHH'), n = Number(c.get(k) || 0);
@@ -396,6 +427,31 @@ function hubDetailLoad(id) {
   return hubDetail(findPO_(st, id), st, ctx);
 }
 /** One entry point for all internal edits. action = what to do, d = data. */
+/** Each department edits its own part. Fields sent unchanged are fine (the form sends everything). */
+function checkRole_(roles, action, d, p, is) {
+  var t = function (x) { return String(x == null ? '' : x).trim(); };
+  switch (action) {
+    case 'who':
+      var allocChanged = t(d.alloc) !== t(p.alloc) || t(d.so) !== t(p.so) || t(d.extra) !== t(p.extra) ||
+        (d.alloc === 'Split' && (num(d.prodQty) !== num(p.prodQty) || num(d.salesQty) !== num(p.salesQty)));
+      if (allocChanged) need_(roles, 'alloc');
+      if (d.qc && d.qc !== p.qc) need_(roles, 'qc');
+      if ('tplInstr' in d && t(d.tplInstr) !== t(p.tplInstr)) need_(roles, 'tplInstr');
+      return;
+    case 'expected': case 'expectedBulk': case 'addPO': return need_(roles, 'expected');
+    case 'prehub': case 'reopen': return need_(roles, 'prehub');
+    case 'supq': return need_(roles, 'supq');
+    case 'recount': case 'nudge': return need_(roles, 'receive3pl');
+    case 'sap': return need_(roles, 'sap');
+    case 'receive': case 'check': return need_(roles, isTPL(p.wh) ? 'receive3pl' : 'receiveOwn');
+    case 'confirmUnplanned': return need_(roles, 'unplanned');
+    case 'issue':
+      var owner = String((is && is.owner) || '').replace(/\s+/g, '');
+      if (can_(roles, 'issue') || roles.indexOf(owner) >= 0) return;
+      return need_(roles, 'issue');
+    case 'note': case 'doc': return; // notes: everyone; doc: checked before the file is saved
+  }
+}
 function hubAction(id, action, d) {
   var me = hubUser_();
   if (action === 'syncNow') { // staff: pull the sheets now. Outside the hub lock, at most once every 2 minutes.
@@ -403,10 +459,13 @@ function hubAction(id, action, d) {
     cc.put('syncNow', me, 120); logAction_(me, 'syncNow', '', '');
     return { ok: true, sync: syncSources_() };
   }
+  var roles = rolesOf_(me);
+  if (action === 'doc') need_(roles, 'doc');
   var preDoc = action === 'doc' ? saveFile_(id, checkFile_((d || {}).file)) : null; // Drive save outside the lock
   var out = withLock_(function () {
     var ctx = ctx_(), st = loadState_(), p = id ? findPO_(st, id) : null, is = id ? st.issue[id] : null;
     d = d || {};
+    checkRole_(roles, action, d, p, is);
     switch (action) {
       case 'who': // allocation, SO, QC, extra conditions, 3PL instructions
         if (d.alloc === 'Split') { var a = num(d.prodQty), b = num(d.salesQty); if (a == null || b == null || a < 0 || b < 0 || a + b !== num(p.cs)) throw new Error('Production + sales must equal ' + p.cs + ' cs.'); p.prodQty = a; p.salesQty = b; }

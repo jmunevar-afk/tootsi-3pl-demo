@@ -23,7 +23,7 @@ function sha256(str){const K=[],H=[];let n=2,c=0;const ip=x=>{for(let d=2;d*d<=x
  const out=[];h.forEach(v=>{for(let i=3;i>=0;i--){const x=(v>>>(i*8))&255;out.push(x>127?x-256:x)}});return out}
 window.MOCK_SHA=s=>sha256(s).map(x=>("0"+(x&255).toString(16)).slice(-2)).join("");
 const CACHE={};window.CacheService={getScriptCache:()=>({get:k=>CACHE[k]===undefined?null:CACHE[k],put:(k,v)=>{CACHE[k]=v},remove:k=>{delete CACHE[k]}})};
-window.Session={getActiveUser:()=>({getEmail:()=>window.MOCK_USER||""})};
+window.Session={getActiveUser:()=>({getEmail:()=>window.MOCK_USER||""}),getEffectiveUser:()=>({getEmail:()=>window.MOCK_OWNER||"juan@tootsi.com"})};
 window.LockService={getScriptLock:()=>({waitLock(){},tryLock(){return true},releaseLock(){}})};
 window.MOCK_MAIL=[];window.MailApp={sendEmail:o=>window.MOCK_MAIL.push(o)};
 window.PropertiesService={getScriptProperties:()=>{const P=window.__props=window.__props||{};return {getProperty:k=>k in P?P[k]:null,setProperty(k,v){P[k]=String(v)},setProperties(o){Object.keys(o).forEach(k=>P[k]=String(o[k]))}}}};

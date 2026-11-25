@@ -16,13 +16,13 @@ function doGet(e) {
   if (view !== '3pl') {
     try {
       hubUser_();
-      return tpl_('Hub').evaluate().setTitle('Tootsi · PO Hub · v15').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+      return tpl_('Hub').evaluate().setTitle('Tootsi · PO Hub · v16').addMetaTag('viewport', 'width=device-width, initial-scale=1');
     } catch (err) { /* not a Tootsi Google account: show the 3PL sign-in page */ }
   }
   // 3PL partners: the page opens on the sign-in screen (username + password from the Users tab).
   var t = tpl_('Portal');
   t.lang = 'fr'; t.hubUrl = String(config_().HUB_URL || '');
-  return t.evaluate().setTitle('Tootsi · 3PL Portal · v15').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  return t.evaluate().setTitle('Tootsi · 3PL Portal · v16').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function page_(name, vars) {
