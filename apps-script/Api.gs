@@ -275,8 +275,9 @@ function shipDiff_(p, st, ctx, f) {
   });
   return { lines: lines, off: off, plt: pltOff, askP: askP, grp: grp };
 }
-function checkShipCall_(p, st, ctx, f, by) {
+function checkShipCall_(p, st, ctx, f, by, fromReport) {
   var r = shipDiff_(p, st, ctx, f), key = shipKey(p), since = roundStart_(r.lines, st, ctx);
+  if (fromReport) { var ofr = r.off.slice(); if (r.plt) ofr.push('pallets'); return { match: !ofr.length, off: ofr, limit: !!ofr.length }; } // typed from the 3PL's report: nobody can recount, so explain the difference
   var wrong = wrongChecks_(key, since);
   if (wrong.length >= 2) { var last = wrong[wrong.length - 1]; return { match: false, limit: true, off: String(last.off).split(',').filter(String) }; }
   var offList = r.off.slice(); if (r.plt) offList.push('pallets');
@@ -325,7 +326,7 @@ function submitShip_(p, st, ctx, f, by, ext, wh) {
   var r = shipDiff_(p, st, ctx, f), offAll = r.off.length || r.plt;
   var wrong = wrongChecks_(key, roundStart_(lines, st, ctx));
   var record = function () { var offList = r.off.slice(); if (r.plt) offList.push('pallets'); append_('Checks', { key: key, at: ctx.stamp, by: by, off: offList.join(','), countJson: { plt: num(f.plt), lines: (f.lines || []).map(function (L) { return { id: L.id, cs: num(L.cs), lbs: num(L.lbs) }; }) } }); };
-  if (offAll && !wrong.length) { record(); throw new Error('RECOUNT'); }
+  if (offAll && !wrong.length && !fromReport) { record(); throw new Error('RECOUNT'); }
   if (offAll && String(f.diffNote || '').trim().length < 10) { record(); throw new Error('Explain the difference.'); }
   // after 2 wrong counts the answer is the same whatever the count: a note is required, so retrying teaches nothing
   if (wrong.length >= 2 && String(f.diffNote || '').trim().length < 10) throw new Error('Explain the difference.');
@@ -368,9 +369,10 @@ function submitShip_(p, st, ctx, f, by, ext, wh) {
 function staffEnters3pl_() { return String(config_().TPL_BY_STAFF || 'yes').toLowerCase() !== 'no'; }
 /** Case weight in lb: received lb / cases, else the PO line weight / cases. 40000 lb / 1600 cases = 25. */
 function caseWeight_(x, L) {
-  var cs = num(L.cs), lb = num(L.lbs), base = lb > 0 ? lb : num(x.lbs);
-  if (!(cs > 0) || !(base > 0)) return '';
-  return String(Math.round(base / cs * 100) / 100);
+  var cs = num(L.cs), lb = num(L.lbs), exp = num(x.cs);
+  var w = lb > 0 && cs > 0 ? lb / cs : (num(x.lbs) > 0 ? num(x.lbs) / (exp > 0 ? exp : cs) : null); // received lb / received cases, else PO weight / PO cases
+  if (!(w > 0) || !isFinite(w)) return '';
+  return String(Math.round(w * 100) / 100);
 }
 function queueMaster_(lines, byId, f, wh, ctx, holder) {
   if (!isTPL(wh) || !config_().MASTER_SHEET_ID || String(config_().MASTER_MODE || 'preview') === 'off') return;
@@ -393,7 +395,7 @@ function portalSlip(token, id) {
   var u = tplUser_(token), st = loadState_();
   // a sent line is no longer "open", so look it up directly (still only this 3PL's own, planned PO)
   var p = st.pos.filter(function (x) { return String(x.id) === String(id); })[0];
-  if (!p || p.wh !== u.wh || (p.unplannedJson && !truthy(p.planOk))) throw new Error('PO not found.');
+  if (!p || p.wh !== u.wh || (p.unplannedJson && !truthy(p.planOk)) || /^REMOVED/.test(String(p.closed || ''))) throw new Error('PO not found.');
   if (!slipFor3pl(p, st, ctx_())) throw new Error('No packing slip yet.');
   return slipFile_(st.slip[p.po].fileId);
 }
@@ -428,6 +430,9 @@ function hubDetailLoad(id) {
 }
 /** One entry point for all internal edits. action = what to do, d = data. */
 /** Each department edits its own part. Fields sent unchanged are fine (the form sends everything). */
+var ISSUE_OWNERS = ['Purchasing', 'Logistics', 'QC', 'Receiving', 'Inventory Control', 'Fulfillment'];
+var DOCK_DECISIONS = ['Pending', 'Refuse', 'Accept with reservation', 'Repalletize and accept'];
+var QC_STATES = ['Not received', 'Locked', 'Released'];
 function checkRole_(roles, action, d, p, is) {
   var t = function (x) { return String(x == null ? '' : x).trim(); };
   switch (action) {
@@ -454,13 +459,14 @@ function checkRole_(roles, action, d, p, is) {
 }
 function hubAction(id, action, d) {
   var me = hubUser_();
+  var roles = rolesOf_(me);
   if (action === 'syncNow') { // staff: pull the sheets now. Outside the hub lock, at most once every 2 minutes.
+    if (roles.length === 1 && roles[0] === 'Viewer') throw new Error('Viewers cannot start a sync. It runs every hour by itself.');
     var cc = CacheService.getScriptCache(); if (cc.get('syncNow')) throw new Error('A sync ran less than 2 minutes ago. Please wait.');
     cc.put('syncNow', me, 120); logAction_(me, 'syncNow', '', '');
     return { ok: true, sync: syncSources_() };
   }
-  var roles = rolesOf_(me);
-  if (action === 'doc') need_(roles, 'doc');
+  if (action === 'doc') { need_(roles, 'doc'); findPO_(loadState_(), id); }
   var preDoc = action === 'doc' ? saveFile_(id, checkFile_((d || {}).file)) : null; // Drive save outside the lock
   var out = withLock_(function () {
     var ctx = ctx_(), st = loadState_(), p = id ? findPO_(st, id) : null, is = id ? st.issue[id] : null;
@@ -468,15 +474,21 @@ function hubAction(id, action, d) {
     checkRole_(roles, action, d, p, is);
     switch (action) {
       case 'who': // allocation, SO, QC, extra conditions, 3PL instructions
-        if (d.alloc === 'Split') { var a = num(d.prodQty), b = num(d.salesQty); if (a == null || b == null || a < 0 || b < 0 || a + b !== num(p.cs)) throw new Error('Production + sales must equal ' + p.cs + ' cs.'); p.prodQty = a; p.salesQty = b; }
-        else { p.prodQty = ''; p.salesQty = ''; }
+        if (d.qc && QC_STATES.indexOf(d.qc) < 0) throw new Error('Unknown QC status.');
+        var tt = function (x) { return String(x == null ? '' : x).trim(); };
+        var allocCh = tt(d.alloc) !== tt(p.alloc) || (d.alloc === 'Split' && (num(d.prodQty) !== num(p.prodQty) || num(d.salesQty) !== num(p.salesQty)));
+        if (allocCh) {
+          if (d.alloc === 'Split') { var a = num(d.prodQty), b = num(d.salesQty); if (a == null || b == null || a < 0 || b < 0 || a + b !== num(p.cs)) throw new Error('Production + sales must equal ' + p.cs + ' cs.'); p.prodQty = a; p.salesQty = b; }
+          else { p.prodQty = ''; p.salesQty = ''; }
+        } else d.alloc = p.alloc;
         var oldQc = p.qc; p.alloc = d.alloc || ''; p.so = String(d.so || '').trim(); p.qc = d.qc || p.qc; p.extra = String(d.extra || '').trim(); if ('tplInstr' in d) p.tplInstr = String(d.tplInstr || '').trim();
         if (p.qc === 'Locked' && oldQc !== 'Locked') p.qcAt = ctx.today; if (p.qc === 'Released' && oldQc !== 'Released') p.relAt = ctx.today;
         savePO_(p, ctx); note_(id, me, 'Saved: ' + (p.alloc || 'no allocation') + (p.alloc === 'Split' ? ' ' + p.prodQty + '/' + p.salesQty : '') + (p.so ? ', ' + p.so : '') + ', QC ' + p.qc, ctx); break;
       case 'expected': // expected qty, destination, ETA (for POs imported without cases)
         // fields changed by hand are marked "manual": the Upcoming sheet import will not overwrite them
+        if (isDone(p, st) && roles.indexOf('Admin') < 0 && ['plt', 'cs', 'lbs'].some(function (k) { return d[k] !== undefined && d[k] !== '' && String(num(d[k])) !== String(p[k]); })) throw new Error('Already received: only an Admin can change the expected quantities.');
         var man = String(p.manual || '').split(',').filter(String), mark = function (k) { if (man.indexOf(k) < 0) man.push(k); }, ch = [];
-        ['plt', 'cs', 'lbs'].forEach(function (k) { if (d[k] !== undefined && d[k] !== '') { var v = num(d[k]); if (v == null || v < 0) throw new Error('Quantities must be 0 or more.'); if (String(v) !== String(p[k])) { ch.push(k + ' ' + v); p[k] = v; if (k !== 'cs') mark(k); } } });
+        ['plt', 'cs', 'lbs'].forEach(function (k) { if (d[k] !== undefined && d[k] !== '') { var v = num(d[k]); if (v == null || v < 0) throw new Error('Quantities must be 0 or more.'); if (String(v) !== String(p[k])) { ch.push(k + ' ' + v); p[k] = v; mark(k); } } });
         if (d.wh && d.wh !== p.wh && st.sub[p.id]) throw new Error('Already received at ' + p.wh + '. The destination can no longer change.');
         if (d.wh && OWN_WH.concat(TPL_WH).indexOf(d.wh) < 0) throw new Error('Unknown warehouse.');
         if (d.eta && !/^\d{4}-\d{2}-\d{2}$/.test(d.eta)) throw new Error('Bad date.');
@@ -504,21 +516,21 @@ function hubAction(id, action, d) {
       case 'restore':
         var sl = st.pos.filter(function (x) { return x.po === p.po && /^REMOVED/.test(String(x.closed || '')); });
         if (!sl.length) throw new Error('This PO is not removed.');
-        sl.forEach(function (x) { x.closed = ''; var mo2 = String(x.manual || '').split(',').filter(String); if (mo2.indexOf('open') < 0) mo2.push('open'); x.manual = mo2.join(','); savePO_(x, ctx); });
+        sl.forEach(function (x) { x.closed = ''; savePO_(x, ctx); });
         notePOs_(sl, me, 'PO restored to the plan', ctx); break;
       case 'expectedBulk': // expected cases for several lines of the same PO in one save
         var setN = 0;
         Object.keys(d.cs || {}).forEach(function (lid) {
           var x = findPO_(st, lid); if (x.po !== p.po || isDone(x, st)) return;
           var v = num(d.cs[lid]); if (v == null || v < 0) throw new Error('Cases must be 0 or more.');
-          if (String(v) !== String(x.cs)) { x.cs = v; savePO_(x, ctx); setN++; }
+          if (String(v) !== String(x.cs)) { x.cs = v; var mb = String(x.manual || '').split(',').filter(String); if (mb.indexOf('cs') < 0) mb.push('cs'); x.manual = mb.join(','); savePO_(x, ctx); setN++; }
         });
         note_(id, me, 'Expected cases set on ' + setN + ' line(s) of PO ' + p.po, ctx); break;
       case 'prehub': // the shipment physically arrived before the hub existed
         var pl2 = openLines_(p, st); if (!pl2.length) throw new Error('Nothing left to close.');
         pl2.forEach(function (x) { x.closed = ctx.today + ' · ' + me; savePO_(x, ctx); });
         notePOs_(pl2, me, 'Marked as received before the hub (' + pl2.length + ' line' + (pl2.length > 1 ? 's' : '') + '). No 3PL receiving expected.', ctx); break;
-      case 'reopen': if (!p.closed) throw new Error('Not closed.'); p.closed = ''; var mo = String(p.manual || '').split(',').filter(String); if (mo.indexOf('open') < 0) mo.push('open'); p.manual = mo.join(','); savePO_(p, ctx); note_(id, me, 'Reopened: receiving expected again', ctx); break;
+      case 'reopen': if (!p.closed) throw new Error('Not closed.'); if (/^REMOVED/.test(String(p.closed))) throw new Error('This PO was removed. Use "Put PO back in the plan".'); if (/merged into PO/.test(String(p.closed))) throw new Error('This line was merged into another PO.'); var mrec = (String(p.closed).match(/^(\d{4}-\d{2}-\d{2}) · received per master sheet/) || [])[1]; p.closed = ''; var mo = String(p.manual || '').split(',').filter(function (m) { return m && m.indexOf('open') !== 0; }); if (mrec) mo.push('open=' + mrec); p.manual = mo.join(','); savePO_(p, ctx); note_(id, me, 'Reopened: receiving expected again', ctx); break;
       case 'supq': // packing list / loading report quantities
         var v = { plt: num(d.plt), cs: num(d.cs), lbs: num(d.lbs) };
         if (v.cs == null || v.cs < 0 || (v.plt != null && v.plt < 0) || (v.lbs != null && v.lbs < 0)) throw new Error('Enter the cases (pallets and lb are optional).');
@@ -526,9 +538,12 @@ function hubAction(id, action, d) {
         upsertSupQ_(id, d.kind === 'lr' ? 'lr' : 'pl', v, me, ctx); note_(id, me, (d.kind === 'lr' ? 'Loading report' : 'Packing list') + ' quantities: ' + v.plt + ' plt / ' + v.cs + ' cs / ' + v.lbs + ' lb', ctx); break;
       case 'issue':
         if (!is) throw new Error('No issue on this PO.');
+        if (d.owner && ISSUE_OWNERS.indexOf(d.owner) < 0) throw new Error('Unknown owner.');
+        if (d.status && ['Open', 'Resolved'].indexOf(d.status) < 0) throw new Error('Unknown status.');
+        if (d.decision !== undefined && d.decision !== '' && DOCK_DECISIONS.indexOf(d.decision) < 0) throw new Error('Unknown decision.');
         if (d.owner) { is.owner = d.owner; is.ownerManual = true; }
         if (d.urgent !== undefined) { is.urgent = !!d.urgent; is.urgentManual = true; }
-        if (d.status) { is.status = d.status; if (d.status === 'Open') { is.opened = ctx.today; is.openManual = true; } else is.openManual = false; }
+        if (d.status) { is.resolvedManual = d.status === 'Resolved'; is.status = d.status; if (d.status === 'Open') { is.opened = ctx.today; is.openManual = true; } else is.openManual = false; }
         if (d.decision !== undefined) { is.decision = d.decision; is.decisionNote = String(d.decisionNote || '').trim(); }
         is.updatedAt = ctx.stamp; upsert_('Issues', 'id', is); note_(id, me, 'Issue updated: ' + JSON.stringify(d), ctx);
         if (d.owner) notifyIssue_(is, ctx); break;
@@ -545,7 +560,7 @@ function hubAction(id, action, d) {
       case 'receive': // Tootsi receiving at BM / LY / HB, or a 3PL receipt typed in by Tootsi from the 3PL's report
         if (isTPL(p.wh) && !staffEnters3pl_()) throw new Error('3PL POs are received by the 3PL.');
         return submitShip_(p, st, ctx, d, (isTPL(p.wh) ? 'Tootsi, from ' + p.wh + ' report' : 'Tootsi receiving (' + p.wh + ')') + ' · ' + me, false, 'HUB');
-      case 'check': if (isTPL(p.wh) && !staffEnters3pl_()) throw new Error('3PL POs are received by the 3PL.'); return checkShipCall_(p, st, ctx, d, me);
+      case 'check': if (isTPL(p.wh) && !staffEnters3pl_()) throw new Error('3PL POs are received by the 3PL.'); return checkShipCall_(p, st, ctx, d, me, isTPL(p.wh));
       case 'confirmUnplanned':
         if (!p.unplannedJson || truthy(p.planOk)) throw new Error('This is not an unplanned arrival.');
         var np = normPO(d.po); if (!/^\d{3,10}(-\d+)?$/.test(np)) throw new Error('Enter the PO number from SAP.');
@@ -627,13 +642,14 @@ function receiptDraft_(r) {
   var plain = 'Hi Receiving Team,\n\nThe inventory detailed below has been received from ' + r.wh + '.\nPlease update the system as soon as possible with this information.\n\n' +
     'Additionally, please attach the enclosed receiving documents and pictures to the relevant PO, and forward them to QC for review and approval.\n\n' +
     head.join('\t') + '\n' + body.map(function (b) { return b.join('\t'); }).join('\n') + '\n\nRegards,\nJuan Munevar\nSpécialiste en Contrôle Inventaire / Inventory Control Specialist\n(514) 381-9790 Ext 147\njmunevar@tootsi.com';
-  var att = [], size = 0;
+  var att = [], size = 0, failed = 0;
   (r.files || []).forEach(function (fid) {
-    try { var b = DriveApp.getFileById(fid).getBlob(), n = b.getBytes().length; if (size + n > 20 * 1024 * 1024) return; size += n; att.push(b); } catch (x) {}
+    try { var b = DriveApp.getFileById(fid).getBlob(), n = b.getBytes().length; if (size + n > 20 * 1024 * 1024) { failed++; return; } size += n; att.push(b); } catch (x) { failed++; }
   });
   var d = GmailApp.createDraft(String(cfg.RCV_EMAIL_TO || 'hbreception@tootsi.com,whb1@tootsi.com'), subject, plain,
     { cc: String(cfg.RCV_EMAIL_CC || 'mjavdany@tootsi.com,jcelis@tootsi.com'), htmlBody: html, attachments: att });
-  return { subject: subject, files: att.length, url: 'https://mail.google.com/mail/u/0/#drafts' };
+  var box = String(Session.getEffectiveUser().getEmail() || '');
+  return { subject: subject, files: att.length, failed: failed, mailbox: box ? box + "'s Gmail" : 'Gmail', url: 'https://mail.google.com/mail/u/0/#drafts' };
 }
 function upsertSupQ_(id, kind, v, me, ctx) {
   upsertWhere_('SupplierQty', function (r) { return r.id === id && r.kind === kind; }, { id: id, kind: kind, plt: v.plt, cs: v.cs, lbs: v.lbs, by: me, at: ctx.stamp });

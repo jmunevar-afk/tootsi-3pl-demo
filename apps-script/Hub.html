@@ -99,6 +99,8 @@ function render(){if(showRem&&!DATA.rows.some(r=>r.removed))showRem=false;
 }
 
 // ---------- roles: each department edits its own part, the rest is read-only ----------
+// staff wording for the shared receiving form (the 3PL portal keeps its own)
+try{Object.assign(L.en,{send:"Check and save the receipt",done_h:"Receipt saved",done_ok:"The receipt is saved in the hub.",done_p:"Saved. The difference was flagged as an issue.",com:"Comments (internal)",limit:"The numbers differ from the PO. Explain the difference below, then save."})}catch(e){}
 function CAN(k){return !DATA||!DATA.can||DATA.can[k]!==false}
 function lockByRole(r,tp,is){
  const off=(sel,why)=>document.querySelectorAll(sel).forEach(el=>{el.disabled=true;el.setAttribute("aria-disabled","true");if(why)el.title=why}),
@@ -111,7 +113,9 @@ function lockByRole(r,tp,is){
  if(!CAN("supq")){off('[id^="pl_"],[id^="lr_"]',"Only Purchasing or Inventory Control can change this");hide("[data-saveq]")}
  if(!(tp?CAN("receive3pl"):CAN("receiveOwn")))hide("#recvown,#recvtop");
  if(!CAN("prehub"))hide("#prehub,#reopen");
- if(!CAN("expected"))hide("#q_eta_save,#removepo,#restorepo");
+ if(!CAN("expected")){hide("#q_eta_save,#removepo,#restorepo");off("#q_eta","Only Logistics, Purchasing or Inventory Control can change this")}
+ if(!CAN("doc"))hide("#i_cat");
+ if(r.removed)off('[data-a],#a_prod,#a_sales,#a_so,#a_extra,#a_qc,#a_tpl,#is_owner,#is_urg,#is_st,#is_dec,#is_decn,#e_plt,#e_cs,#e_lbs,#e_wh,#e_eta',"This PO was removed. Put it back in the plan to edit it."),hide("#a_save,#e_save,#bc_save,[data-saveq]");
  if(!CAN("sap"))hide("#sapbtn");
  if(!CAN("receive3pl"))hide("#askre,#nudge");
  if(!CAN("unplanned"))hide("#up_ok");
@@ -150,7 +154,7 @@ async function openPO(id,keepScroll){openId=id;const y=keepScroll&&$("drawer").c
    ${r.claim?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${s&&tp&&!r.req?`<button type="button" class="btn ghost" id="askre">↻ Ask ${esc(r.wh)} for another count (${c.length} of 3)</button>`:""}<button type="button" class="btn ghost" id="claim">📋 Build claim package (NCR)</button></div>`:""}
    <div id="askbox"></div><div id="claimbox"></div></div></div>`:""}
   ${r.lines&&r.lines.length?`<div class="sec"><h3>${r.cntr?"Container "+esc(r.cntr):"Shipment"} · ${r.lines.length} item${r.lines.length>1?"s":""}${r.shipPlt!=null?" · "+fmt(r.shipPlt)+" pallets":""}</h3><div class="card" style="padding:6px 10px">
-   ${r.lines.map(x=>`<div style="display:flex;gap:8px;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f3f0;font-size:13px"><span>${x.id===r.id?"▸ ":""}<b class="mono">${esc(x.po)} / ${esc(x.item)}</b> ${esc(x.desc)}</span><span class="small" style="margin:0;white-space:nowrap">${x.sub?fmt(x.sub.cs)+" cs received":x.done?"Before the hub":(x.cs===""||x.cs==null?"no expected cs":fmt(x.cs)+" cs expected")}</span></div>`).join("")}
+   ${r.lines.map(x=>`<div style="display:flex;gap:8px;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f3f0;font-size:13px"><span>${x.id===r.id?"▸ ":""}<b class="mono">${esc(x.po)} / ${esc(x.item)}</b> ${esc(x.desc)}</span><span class="small" style="margin:0;white-space:nowrap">${x.sub?fmt(x.sub.cs)+" cs received":x.done?(x.closedWhy||"Closed"):(x.cs===""||x.cs==null?"no expected cs":fmt(x.cs)+" cs expected")}</span></div>`).join("")}
    ${r.lines.some(x=>!x.done)?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button type="button" class="btn ghost" id="prehub">Received before the hub</button><span class="small" style="align-self:center">Use this if the shipment arrived before the pilot started. It stops the late alerts.</span></div><div id="phbox"></div>`:""}
    ${r.closed&&!r.removed?`<button type="button" class="btn ghost" id="reopen" style="margin-top:8px">Reopen this line (receiving expected)</button>`:""}</div>
    <details class="sec" ${r.lines.some(x=>!x.done&&(x.cs===""||x.cs==null))?"open":""}><summary>Expected cases for all lines of PO ${esc(r.po)}</summary>
@@ -192,7 +196,7 @@ async function openPO(id,keepScroll){openId=id;const y=keepScroll&&$("drawer").c
  $("drawer").scrollTop=y;
  const qe=$("q_eta_save");if(qe)qe.onclick=()=>{if(!v("q_eta"))return toast("Pick a date.");act(id,"expected",{eta:v("q_eta")},"ETA updated to "+fd(v("q_eta"))+".")};
  const rp=$("removepo");if(rp)rp.onclick=()=>{$("rmbox").innerHTML=`<div class="confirm" style="margin-top:8px">Remove PO ${esc(r.po)} from the plan? All its open lines are hidden. It stays on file and can be put back.<label for="rm_why" style="margin-top:8px">Reason</label><input class="in" id="rm_why" placeholder="e.g. Cancelled by supplier, duplicate line"><div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="btn" id="rmyes">Remove</button><button type="button" class="btn ghost" id="rmno">Cancel</button></div></div>`;
-  $("rmno").onclick=()=>{$("rmbox").innerHTML=""};$("rmyes").onclick=async()=>{const why=v("rm_why").trim();if(why.length<5)return toast("Give a reason.");await act(id,"remove",{reason:why},"PO "+r.po+" removed.");closeD()}};
+  $("rmno").onclick=()=>{$("rmbox").innerHTML=""};$("rmyes").onclick=async()=>{const why=v("rm_why").trim();if(why.length<5)return toast("Give a reason (at least 5 characters).");await act(id,"remove",{reason:why},"PO "+r.po+" removed.");closeD()}};
  const rs=$("restorepo");if(rs)rs.onclick=()=>act(id,"restore",{},"PO "+r.po+" is back in the plan.");
  lockByRole(r,tp,is);
  const v=id2=>{const el=$(id2);return el?el.value:""};

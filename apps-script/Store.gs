@@ -6,7 +6,7 @@
 var TABLES = {
   POs: ['id','po','item','wh','desc','supplier','eta','clockFrom','cntr','plt','cs','lbs','load','alloc','prodQty','salesQty','so','qc','qcAt','relAt','sap','instrSap','extra','tplInstr','source','addedBy','unplannedJson','planOk','nudged','updatedAt','closed','manual'],
   Submissions: ['subId','id','seq','superseded','by','at','recv','plt','cs','lbs','firstJson','diffNote','lot','exp','cond','damage','dmgText','comment','filesJson','ship','grpPlt'],
-  Issues: ['id','type','owner','ownerManual','status','opened','urgent','urgentManual','openManual','decision','decisionNote','updatedAt'],
+  Issues: ['id','type','owner','ownerManual','status','opened','urgent','urgentManual','openManual','decision','decisionNote','updatedAt','resolvedManual'],
   Notes: ['id','who','text','at','ext'],
   Delays: ['delayId','id','reason','note','newDate','by','at','date','closedAt','filesJson'],
   Recounts: ['id','at','from','active','base'],

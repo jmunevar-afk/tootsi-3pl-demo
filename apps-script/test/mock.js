@@ -82,7 +82,7 @@ window.verifyFile_=(fid,who)=>{const x=INC[fid];if(!x||x.who!==who)throw new Err
 window.finishMoves_=moves=>{(moves||[]).forEach(mv=>{delete INC[mv.fid]})};
 window.slipFile_=fid=>({name:"PO packing slip.pdf",type:"application/pdf",data:"JVBERi0xLjQKJcOkw7zDtsOfCjEgMCBvYmo8PC9UeXBlL0NhdGFsb2c+PgplbmRvYmoKdHJhaWxlcjw8L1Jvb3QgMSAwIFI+PgolJUVPRgo="});
 window.poFolder_=()=>({getUrl:()=>"#preview-folder"});
-window.syncSources_=()=>{PropertiesService.getScriptProperties().setProperties({LAST_SYNC:nowStamp_(),LAST_SYNC_OK:'yes',UPCOMING_AT:'2026-11-24 15:48'});return {upcoming:0,slips:0,master:{seen:0,written:0,preview:0}}};
+window.syncSources_=()=>{PropertiesService.getScriptProperties().setProperties({LAST_SYNC:nowStamp_(),LAST_SYNC_OK:'yes',UPCOMING_AT:'2026-11-24 15:48'});return {upcoming:0,sap:{lines:0,added:0,updated:0},slips:0,master:{seen:0,written:0,preview:0}}};
 window.today_=()=>ymd(mockNow());
 window.nowStamp_=()=>{const d=mockNow();return ymd(d)+" "+pad(d.getHours())+":"+pad(d.getMinutes())};
 window.ctx_=()=>({cfg:config_(),today:today_(),nowH:mockNow().getHours(),stamp:nowStamp_()});

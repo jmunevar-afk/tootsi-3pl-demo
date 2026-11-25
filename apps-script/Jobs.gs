@@ -42,10 +42,12 @@ function importUpcoming_() {
   lines.forEach(function (L) { if (L.wh && !poWh[L.po]) poWh[L.po] = L.wh; });
   return withLock_(function () {
     var ctx = ctx_(), st = loadState_(), have = {}, added = 0, changed = 0, notesByPO = {};
-    st.pos.forEach(function (p) { have[p.id] = p; if (p.wh && p.source === 'sheet' && !poWh[p.po]) poWh[p.po] = p.wh; });
+    var removedPO = {};
+    st.pos.forEach(function (p) { have[p.id] = p; if (p.wh && p.source === 'sheet' && !poWh[p.po]) poWh[p.po] = p.wh; if (/^REMOVED/.test(String(p.closed || ''))) removedPO[p.po] = true; });
     lines.forEach(function (L) { if (!L.wh && poWh[L.po]) L.wh = poWh[L.po]; });
     lines.forEach(function (L) {
       var p = have[L.id];
+      if (!p && removedPO[L.po]) return; // removed from the plan in the hub
       if (!p) {
         L.cs = ''; L.qc = 'Not received'; L.source = 'sheet'; L.addedBy = 'Import'; L.updatedAt = ctx.stamp;
         if (L.plt == null) L.plt = ''; if (L.lbs == null) L.lbs = '';
@@ -53,13 +55,18 @@ function importUpcoming_() {
       }
       // keep the hub in step with the sheet: ETA, destination, container, pallets, weight, load type
       // never after receiving, and never for a field someone changed by hand in the hub
-      if (p.source !== 'sheet' || st.sub[p.id] || p.closed) return;
-      var manual = String(p.manual || '').split(','), diff = [];
+      if ((p.source !== 'sheet' && p.source !== 'sap') || st.sub[p.id] || p.closed) return;
+      var manual = String(p.manual || '').split(',').filter(String), diff = [], drop = [];
       ['eta', 'wh', 'cntr', 'plt', 'lbs', 'load'].forEach(function (k) {
         var nv = L[k] == null ? '' : L[k], ov = p[k] == null ? '' : p[k];
-        if (manual.indexOf(k) >= 0 || manual.indexOf(k + '@sap') >= 0 || nv === '' || String(nv) === String(ov)) return; // SAP report wins over the sheet
+        if (manual.indexOf(k) >= 0 || nv === '') return; // changed by hand in the hub
+        // the SAP report replaced the sheet value: keep SAP's value while the sheet still shows the old one; once the sheet changes, the sheet wins
+        var mk = manual.filter(function (m) { return m.indexOf(k + '@sheet=') === 0; })[0];
+        if (mk) { if (String(nv).replace(/,/g, ' ') === mk.slice((k + '@sheet=').length)) return; drop.push(mk); }
+        if (String(nv) === String(ov)) return;
         diff.push(k + ' ' + (ov === '' ? '(blank)' : ov) + ' → ' + nv); p[k] = nv;
       });
+      if (drop.length) { p.manual = manual.filter(function (m) { return drop.indexOf(m) < 0; }).join(','); if (!diff.length) savePO_(p, ctx); }
       if (diff.length) { savePO_(p, ctx); (notesByPO[p.po] = notesByPO[p.po] || { id: p.id, d: {} }); diff.forEach(function (t) { notesByPO[p.po].d[t] = true; }); changed++; }
     });
     // one note per PO (a 17-line container gets one note, not 17)
@@ -95,20 +102,24 @@ function importSapReport_() {
   var cfg = config_(); if (String(cfg.SAP_REPORT || 'yes').toLowerCase() === 'no') return 'off';
   var q = String(cfg.SAP_REPORT_QUERY || 'from:sap@tootsi.com subject:"Upcoming Deliveries to Tootsi" newer_than:3d');
   var threads = GmailApp.search(q, 0, 10), msgs = [];
-  threads.forEach(function (t) { t.getMessages().forEach(function (m) { if (/Upcoming Deliveries to Tootsi/i.test(m.getSubject())) msgs.push(m); }); });
+  var sender = String(cfg.SAP_REPORT_FROM || 'sap@tootsi.com').toLowerCase();
+  threads.forEach(function (t) { t.getMessages().forEach(function (m) {
+    var from = String(m.getFrom() || '').toLowerCase(), addr = (from.match(/<([^>]+)>/) || [, from])[1].trim();
+    if (addr === sender && /Upcoming Deliveries to Tootsi/i.test(m.getSubject())) msgs.push(m); // only the SAP server itself, not a forward or a look-alike
+  }); });
   if (!msgs.length) return 'no report';
   msgs.sort(function (a, b) { return b.getDate() - a.getDate(); });
   var msg = msgs[0], props = PropertiesService.getScriptProperties();
   var when = Utilities.formatDate(msg.getDate(), 'America/Toronto', 'yyyy-MM-dd HH:mm'), label = (String(msg.getSubject()).match(/\(([^)]+)\)/) || [, ''])[1];
-  var rows = parseSapReport_(msg.getBody());
-  if (!rows.length) throw new Error('SAP report of ' + when + ': no table found.');
+  var body = msg.getBody(), rows = parseSapReport_(body);
+  if (!rows.length && !/PO#/i.test(body)) throw new Error('SAP report of ' + when + ': no table found.');
   var res = applySapRows_(rows, when, label);
   props.setProperties({ SAP_REPORT_AT: when, SAP_REPORT_LABEL: label, SAP_REPORT_LINES: String(rows.length) });
   return res;
 }
 /** The report is an HTML table: header row, then one row per PO line. */
 function parseSapReport_(html) {
-  var cell = function (s) { return String(s).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim(); };
+  var cell = function (s) { return String(s).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#(\d+);/g, function (m, c) { return String.fromCharCode(+c); }).replace(/\s+/g, ' ').trim(); };
   var trs = String(html).match(/<tr[\s\S]*?<\/tr>/gi) || [], head = null, out = [];
   trs.forEach(function (tr) {
     var tds = (tr.match(/<td[\s\S]*?<\/td>/gi) || []).map(cell);
@@ -119,7 +130,7 @@ function parseSapReport_(html) {
   var dash = function (v) { v = String(v || '').trim(); return v === '-' ? '' : v; };
   var n = function (v) { v = dash(v).replace(/,/g, ''); return v === '' || isNaN(Number(v)) ? null : Number(v); };
   return out.map(function (o) {
-    var d = dash(o['planned delivery']).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    var d = dash(o['planned delivery']).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
     var size = dash(o['ship size']), csize = dash(o['csize']), pal = dash(o['pltzd']) === '1';
     var load = size ? (size === 'FCL' ? 'FCL ' + csize : size) + ' · ' + (size === 'FCL' && !pal ? 'Floor loaded' : 'Palletized') : '';
     return { po: normPO(o['po#']), item: dash(o['item code']), supplier: dash(o['name']), desc: dash(o['item description']),
@@ -130,10 +141,12 @@ function parseSapReport_(html) {
 function applySapRows_(rows, when, label) {
   var WH = TPL_WH.concat(OWN_WH);
   return withLock_(function () {
-    var ctx = ctx_(), st = loadState_(), have = {}, added = 0, changed = 0, notesByPO = {};
-    st.pos.forEach(function (p) { have[p.id] = p; });
+    var ctx = ctx_(), st = loadState_(), have = {}, added = 0, changed = 0, notesByPO = {}, removedPO = {}, capped = false;
+    st.pos.forEach(function (p) { have[p.id] = p; if (/^REMOVED/.test(String(p.closed || ''))) removedPO[p.po] = true; });
     rows.forEach(function (r) {
       var id = r.po + '|' + r.item, p = have[id], wh = WH.indexOf(r.wh) >= 0 ? r.wh : '';
+      if (!p && removedPO[r.po]) return; // someone removed this PO from the plan: do not bring it back
+      if (!p && added >= 60) { capped = true; return; } // circuit breaker: never more than 60 new lines from one report
       if (!p) {
         var np = { id: id, po: r.po, item: r.item, wh: wh, desc: r.desc, supplier: r.supplier, eta: r.eta, cntr: r.cntr, plt: r.plt == null ? '' : r.plt,
           cs: r.cs == null ? '' : r.cs, lbs: r.lbs ? r.lbs : '', load: r.load, qc: 'Not received', source: 'sap', addedBy: 'SAP report' };
@@ -142,19 +155,23 @@ function applySapRows_(rows, when, label) {
         return;
       }
       if (st.sub[p.id] || p.closed) return; // received, removed or closed: the report never reopens a line
-      var man = String(p.manual || '').split(',').filter(String), diff = [];
+      var man = String(p.manual || '').split(',').filter(function (m) { return m && !/@sap$/.test(m); }), diff = []; // v19 markers are replaced by <field>@sheet=
       var set = function (k, nv) {
         if (nv == null || nv === '' || man.indexOf(k) >= 0) return; // empty in SAP, or changed by hand in the hub
         if (String(nv) === String(p[k] == null ? '' : p[k])) return;
-        diff.push(k + ' ' + (p[k] === '' || p[k] == null ? '(blank)' : p[k]) + ' → ' + nv); p[k] = nv; if (man.indexOf(k + '@sap') < 0) man.push(k + '@sap');
+        diff.push('item ' + p.item + ' ' + k + ' ' + (p[k] === '' || p[k] == null ? '(blank)' : p[k]) + ' → ' + nv);
+        if (!man.some(function (m) { return m.indexOf(k + '@sheet=') === 0; })) man.push(k + '@sheet=' + String(p[k] == null ? '' : p[k]).replace(/,/g, ' '));
+        p[k] = nv;
       };
       set('wh', wh); set('cs', r.cs); set('eta', r.eta); set('cntr', r.cntr);
       if (r.lbs) set('lbs', r.lbs); if (r.plt != null) set('plt', r.plt);
-      if (diff.length) { p.manual = man.join(','); savePO_(p, ctx); (notesByPO[p.po] = notesByPO[p.po] || { id: p.id, d: {} }); diff.forEach(function (t) { notesByPO[p.po].d[t] = true; }); changed++; }
+      if (diff.length || man.join(',') !== String(p.manual || '')) { p.manual = man.join(','); savePO_(p, ctx); }
+      if (diff.length) { (notesByPO[p.po] = notesByPO[p.po] || { id: p.id, d: {} }); diff.forEach(function (t) { notesByPO[p.po].d[t] = true; }); changed++; }
     });
     Object.keys(notesByPO).forEach(function (po) { note_(notesByPO[po].id, 'SAP report', 'SAP ' + (label || 'report') + ' ' + when + ': ' + Object.keys(notesByPO[po].d).join(', '), ctx); });
     if (added || changed) { logAction_('Import', 'importSapReport', when, added + ' new PO lines, ' + changed + ' updated'); sync_(loadState_(), ctx); }
-    return { lines: rows.length, added: added, updated: changed, report: when };
+    if (capped) logAction_('Import', 'error', 'sap', 'More than 60 new lines in one SAP report: the rest were not added. Check the report.');
+    return { lines: rows.length, added: added, updated: changed, report: when, capped: capped };
   });
 }
 
@@ -220,7 +237,7 @@ function syncMaster_() {
       }
       if (ds && (!have[p.id] || have[p.id].recv !== ds)) { upsert_('MasterSeen', 'id', { id: p.id, recv: ds, row: String(hr + 1 + hit), checked: ctx.today }); seen++; }
       // the master shows it received (units + a real date): the hub marks the line received too, unless someone reopened it by hand
-      if (ds && autoClose && String(p.manual || '').split(',').indexOf('open') < 0) {
+      if (ds && autoClose && String(p.manual || '').split(',').indexOf('open=' + ds) < 0 && String(p.manual || '').split(',').indexOf('open') < 0) {
         p.closed = ds + ' · received per master sheet (row ' + (hr + 1 + hit) + ', ' + M.units[hit] + ' units)';
         if (!p.qc || p.qc === 'Not received') { p.qc = 'Locked'; p.qcAt = ds; }
         savePO_(p, ctx); note_(p.id, 'Master sheet', 'Received at ' + p.wh + ' on ' + ds + ': ' + M.units[hit] + ' units in the master sheet (row ' + (hr + 1 + hit) + ').', ctx); closedN++;
@@ -250,10 +267,11 @@ function syncMaster_() {
       }
       if (mode !== 'on') { q.status = 'preview: would write'; previewed++; save(); return; }
       // right before writing, make sure the row was not moved (someone may sort or insert rows in the master)
-      if (normPO(sh.getRange(hr + 1 + row, C.po).getDisplayValue()) !== q.po) { q.status = 'master rows moved: will retry'; save(); return; }
+      var chkWh = String(sh.getRange(hr + 1 + row, C.wh).getDisplayValue()).trim().toUpperCase(), chkIt = C.item ? String(sh.getRange(hr + 1 + row, C.item).getDisplayValue()).trim() : '';
+      if (normPO(sh.getRange(hr + 1 + row, C.po).getDisplayValue()) !== q.po || chkWh !== q.wh || (chkIt !== '' && chkIt !== q.item)) { q.status = 'master rows moved: will retry'; save(); return; }
       var v = String(q.value), m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       var val = (q.field === 'recv' || q.field === 'exp') && m ? new Date(+m[1], +m[2] - 1, +m[3])
-        : q.field === 'units' || q.field === 'plt' ? num(v)
+        : q.field === 'units' || q.field === 'plt' || (q.field === 'item' && /^\d+$/.test(v)) ? num(v)
         : q.field === 'docs' && /^https:\/\/drive\.google\.com\//.test(v) ? '=HYPERLINK("' + v.replace(/"/g, '') + '","Docs ' + Utilities.formatDate(new Date(), 'America/Toronto', 'MMM d') + '")'
         : "'" + v; // text always as text: never a formula in Majid's sheet
       sh.getRange(hr + 1 + row, c).setValue(val);

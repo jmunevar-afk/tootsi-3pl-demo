@@ -40,8 +40,10 @@ function shipPallets(lines) {
   var v = lines.map(function (x) { return num(x.plt); }).filter(function (n) { return n != null; });
   if (!v.length) return null;
   if (lines.length === 1) return v[0];
-  var fromSheet = lines.every(function (x) { return x.source === 'sheet'; });
-  return fromSheet ? Math.max.apply(null, v) : v.reduce(function (a, b) { return a + b; }, 0);
+  var sheetV = [], other = 0, any = false;
+  lines.forEach(function (x) { var n = num(x.plt); if (n == null) return; any = true; if (x.source === 'sheet' || x.source === 'sap') sheetV.push(n); else other += n; }); // the sheet and the SAP report both repeat the shipment total on every line
+  if (!any) return null;
+  return (sheetV.length ? Math.max.apply(null, sheetV) : 0) + other;
 }
 function isFloor(p) { return /floor/i.test(p.load || ''); }
 function num(v) { if (v === '' || v == null) return null; var n = +v; return isFinite(n) ? n : null; }
@@ -150,7 +152,7 @@ function syncIssues(st, ctx) {
     }
     if (!is) return;
     var changed = false;
-    if (want.type && want.type !== is.type) {
+    if (want.type && (want.type !== is.type || (is.status !== 'Open' && !truthy(is.resolvedManual)))) {
       if (is.status !== 'Open') { is.status = 'Open'; is.opened = ctx.today; notes.push({ id: p.id, who: 'System', text: 'Issue reopened: ' + want.type, at: ctx.stamp, ext: false }); }
       is.type = want.type; if (!truthy(is.ownerManual)) is.owner = want.owner; is._chg = true;
       if (st.sub[p.id] && st.sub[p.id].damage && !is.decision) is.decision = 'Pending';
@@ -246,7 +248,7 @@ function timeline(p, st, ctx) {
   var steps = [
     ['On the upcoming list', unpl ? 'No: arrived without notice' : (p.source === 'manual' ? 'Added by ' + p.addedBy : 'From the shipment sheet'), !unpl, unpl],
     ['Packing list received', pl ? 'Entered by ' + pl.by : (st.slip[p.po] && st.slip[p.po].status === 'FOUND' ? 'Packing slip on file' : ''), !!pl || !!(st.slip[p.po] && st.slip[p.po].status === 'FOUND'), false],
-    ['Arrived at ' + (p.wh || '?'), p.closed ? 'Before the hub (' + p.closed + ')' : s ? s.recv + (dd ? ' (' + Math.abs(dd) + ' d ' + (dd < 0 ? 'early' : 'late') + ')' : '') : st.delay[p.id] ? 'Delay: ' + REASON_EN[st.delay[p.id].reason] : unpl ? 'Reported ' + p.unplannedJson.at : (p.eta ? 'ETA ' + p.eta : ''), !!s || unpl || !!p.closed, late],
+    ['Arrived at ' + (p.wh || '?'), p.closed ? (/^REMOVED/.test(String(p.closed)) ? 'Removed (' + String(p.closed).replace(/^REMOVED · /, '') + ')' : /master sheet/.test(String(p.closed)) ? 'Per master sheet (' + String(p.closed).replace(/ · received per master sheet/, '') + ')' : 'Before the hub (' + p.closed + ')') : s ? s.recv + (dd ? ' (' + Math.abs(dd) + ' d ' + (dd < 0 ? 'early' : 'late') + ')' : '') : st.delay[p.id] ? 'Delay: ' + REASON_EN[st.delay[p.id].reason] : unpl ? 'Reported ' + p.unplannedJson.at : (p.eta ? 'ETA ' + p.eta : ''), !!s || unpl || !!p.closed, late],
     ['Counted and documented', s ? s.by : '', !!s, false],
     ['Quantity verified', s ? (diffs(p, s, ctx).length ? gapText(p, s, ctx) : 'Matches PO') : '', !!s && !diffs(p, s, ctx).length, !!s && diffs(p, s, ctx).length > 0],
     ['Entered in SAP / WMS', p.sap ? p.sap : notInSap(p, st, ctx) ? 'Missing ' + daysBetween(s.recv, ctx.today) + ' d' : '', !!p.sap, notInSap(p, st, ctx)],
@@ -304,7 +306,7 @@ function hubDetail(p, st, ctx) {
   r.docs = []; r.notes = [];
   same.forEach(function (x) { r.docs = r.docs.concat(st.docs[x.id] || []); r.notes = r.notes.concat(st.notes[x.id] || []); });
   r.notes.sort(function (a, b) { return String(a.at) < String(b.at) ? -1 : 1; });
-  r.lines = shipLines(p, st).map(function (x) { return { id: x.id, po: x.po, item: x.item, desc: x.desc, cs: x.cs, lbs: x.lbs, done: isDone(x, st), sub: st.sub[x.id] ? { cs: st.sub[x.id].cs, lot: st.sub[x.id].lot } : null }; });
+  r.lines = shipLines(p, st).map(function (x) { return { closedWhy: /^REMOVED/.test(String(x.closed || '')) ? 'Removed' : /master sheet/.test(String(x.closed || '')) ? 'Received (master sheet)' : x.closed ? 'Before the hub' : '', id: x.id, po: x.po, item: x.item, desc: x.desc, cs: x.cs, lbs: x.lbs, done: isDone(x, st), sub: st.sub[x.id] ? { cs: st.sub[x.id].cs, lot: st.sub[x.id].lot } : null }; });
   r.shipPlt = shipPallets(shipLines(p, st)); r.askP = shipAskP(p, st); r.fresh = shipFresh(p, st);
   r.claim = (st.sub[p.id] || (st.hist[p.id] || []).length) ? claimText(p, st, ctx) : '';
   return r;
@@ -317,7 +319,7 @@ function portalRow(p, st, ctx) {
     id: p.id, ship: shipKey(p), askP: shipAskP(p, st), fresh: shipFresh(p, st), shipPlt: shipPallets(shipLines(p, st)), po: p.po, item: p.item, desc: p.desc, eta: p.eta, cntr: p.cntr, plt: p.plt, load: p.load, floor: isFloor(p), instr: p.tplInstr || '',
     sla: sl ? { lvl: sl.lvl } : null, req: !!st.req[p.id], slip: slipFor3pl(p, st, ctx),
     delay: dl ? { reason: dl.reason, newDate: dl.newDate } : null,
-    sent: s ? { recv: s.recv, at: s.at, plt: s.plt, cs: s.cs, lbs: s.lbs, first: s.firstJson, diffNote: s.diffNote, lot: s.lot, exp: s.exp, cond: s.cond, damage: truthy(s.damage), dmgText: s.dmgText, comment: s.comment,
+    sent: s ? { recv: s.recv, at: s.at, plt: s.plt, cs: s.cs, lbs: s.lbs, first: s.firstJson, diffNote: s.diffNote, lot: s.lot, exp: s.exp, cond: s.cond, damage: truthy(s.damage), dmgText: s.dmgText, comment: /^Tootsi/.test(String(s.by || '')) ? '' : s.comment, byTootsi: /^Tootsi/.test(String(s.by || '')),
       files: (s.filesJson || []).map(function (f) { return { cat: f.cat, name: f.name }; }) } : null
   };
 }
