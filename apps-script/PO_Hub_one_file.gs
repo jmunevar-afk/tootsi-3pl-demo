@@ -23,13 +23,13 @@ function doGet(e) {
   if (view !== '3pl') {
     try {
       hubUser_();
-      return tpl_('Hub').evaluate().setTitle('Tootsi · PO Hub · v14').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+      return tpl_('Hub').evaluate().setTitle('Tootsi · PO Hub · v15').addMetaTag('viewport', 'width=device-width, initial-scale=1');
     } catch (err) { /* not a Tootsi Google account: show the 3PL sign-in page */ }
   }
   // 3PL partners: the page opens on the sign-in screen (username + password from the Users tab).
   var t = tpl_('Portal');
   t.lang = 'fr'; t.hubUrl = String(config_().HUB_URL || '');
-  return t.evaluate().setTitle('Tootsi · 3PL Portal · v14').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  return t.evaluate().setTitle('Tootsi · 3PL Portal · v15').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function page_(name, vars) {
@@ -1279,6 +1279,26 @@ function hubAction(id, action, d) {
   return out;
 }
 
+/** Juan's Gmail signature (a script draft does not get the Gmail signature by itself). Config EMAIL_SIGNATURE replaces it. */
+var SIGNATURE_HTML = [
+  '<div style="font-family:Arial,sans-serif;font-size:13.3px;color:#000">Regards,</div>',
+  '<div style="font-family:Arial,sans-serif;font-size:10pt;color:#666666"><b>Juan Munevar</b></div>',
+  '<div style="font-family:Arial,sans-serif;font-size:13.3px;color:#666666">Spécialiste en Contrôle Inventaire / Inventory Control Specialist</div>',
+  '<div style="font-family:Arial,sans-serif;font-size:10pt;color:#b6d7a8;margin:6px 0"> • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • • •</div>',
+  '<div style="font-family:Arial,sans-serif;font-size:10pt;color:#666666">(514) 381-9790 Ext 147</div>',
+  '<div style="font-family:Arial,sans-serif;font-size:10pt;margin:4px 0"><b><a href="https://tootsi.com/" style="color:#a8d08d">tootsi.com</a></b>&nbsp; <a href="mailto:jmunevar@tootsi.com" style="color:gray">jmunevar@tootsi.com</a></div>',
+  '<table border="0" cellpadding="0" cellspacing="0" style="margin:6px 0"><tr>',
+  '<td><a href="https://tootsi.com/"><img src="https://tootsi.com/Images/40th-SIGNATURE-HORI_01.png" width="116" height="60" alt="Tootsi Impex"></a></td>',
+  '<td><a href="https://yupik.com/en/"><img src="https://tootsi.com/Images/40th-SIGNATURE-HORI_02.png" width="127" height="60" alt="Yupik"></a></td>',
+  '<td><a href="https://elanbio.ca/"><img src="https://tootsi.com/Images/40th-SIGNATURE-HORI_03.png" width="68" height="60" alt="Elan"></a></td></tr></table>',
+  '<div style="font-family:Calibri,sans-serif;font-size:10pt;font-style:italic;color:#000;max-width:360px">Click on the following links to discover our ',
+  '<a href="https://www.tootsi.com/forms/TOOTSI_CATALOG_CANADA.pdf">Tootsi</a> (bulk) and <a href="https://www.tootsi.com/forms/YUPIK_RETAIL_CATALOG.pdf">Yupik</a> catalogs. and ',
+  '<a href="https://www.tootsi.com/forms/ELAN_CATALOG_CANADA.pdf">Momentum</a> / Follow these links to view our ',
+  '<a href="https://www.tootsi.com/forms/TOOTSI_CATALOG_CANADA.pdf">Tootsi</a> bulk, <a href="https://www.tootsi.com/forms/YUPIK_RETAIL_CATALOG.pdf">Yupik</a> and ',
+  '<a href="https://www.tootsi.com/forms/ELAN_CATALOG_CANADA.pdf">Elan</a> catalogs.</div>',
+  '<div style="font-family:Arial,sans-serif;font-size:x-small;color:#333;margin-top:10px">Le présent courriel peut contenir des renseignements confidentiels et ne s’adresse qu’au destinataire dont le nom figure ci-dessus. Si ce courriel vous est parvenu par mégarde, veuillez le supprimer et nous en aviser aussitôt. Merci!</div>',
+  '<div style="font-family:Arial,sans-serif;font-size:x-small;color:#222;margin-top:8px">This email may contain confidential information and is intended solely for the individual or entity named above. If you have received this email in error, please delete it immediately and notify us without delay. Thank you!</div>'
+].join('');
 /** Gmail draft for the receiving team, like Juan's usual "PO ... – Receiving Documents from DL" email, with the photos and documents attached. */
 function receiptDraft_(r) {
   var cfg = config_(), rows = r.rows.filter(function (x) { return x.cs > 0; });
@@ -1294,11 +1314,11 @@ function receiptDraft_(r) {
     'Additionally, please attach the enclosed receiving documents and pictures to the relevant PO, and forward them to QC for review and approval.<br><br>';
   var table = '<table style="border-collapse:collapse"><tr>' + head.map(function (h) { return '<th style="' + th + '">' + h + '</th>'; }).join('') + '</tr>' +
     body.map(function (b) { return '<tr>' + b.map(function (v) { return '<td style="' + td + '">' + e(v) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>';
-  var sig = String(cfg.EMAIL_SIGNATURE || 'Regards,<br><b>Juan Munevar</b><br>Spécialiste en Contrôle Inventaire / Inventory Control Specialist<br>(514) 381-9790 Ext 147');
+  var sig = String(cfg.EMAIL_SIGNATURE || SIGNATURE_HTML);
   var html = '<div style="font-family:Arial;font-size:10pt">' + intro + table + '<br>' + sig + '</div>';
   var plain = 'Hi Receiving Team,\n\nThe inventory detailed below has been received from ' + r.wh + '.\nPlease update the system as soon as possible with this information.\n\n' +
     'Additionally, please attach the enclosed receiving documents and pictures to the relevant PO, and forward them to QC for review and approval.\n\n' +
-    head.join('\t') + '\n' + body.map(function (b) { return b.join('\t'); }).join('\n') + '\n\nRegards,\nJuan Munevar';
+    head.join('\t') + '\n' + body.map(function (b) { return b.join('\t'); }).join('\n') + '\n\nRegards,\nJuan Munevar\nSpécialiste en Contrôle Inventaire / Inventory Control Specialist\n(514) 381-9790 Ext 147\njmunevar@tootsi.com';
   var att = [], size = 0;
   (r.files || []).forEach(function (fid) {
     try { var b = DriveApp.getFileById(fid).getBlob(), n = b.getBytes().length; if (size + n > 20 * 1024 * 1024) return; size += n; att.push(b); } catch (x) {}
