@@ -242,7 +242,18 @@ async def main():
     ok("report entry: a different count asks for a note, not a recount", ck.get("limit") is True and ck.get("match") is False, [ck,dbg])
     rr=await hub.evaluate("f=>new Promise(r=>google.script.run.withSuccessHandler(x=>r(x)).withFailureHandler(e=>r({err:e.message})).hubAction('90102|20087','receive',{recv:'2026-11-23',plt:20,cond:'Good',load:[],doc:[f],lines:[{id:'90102|20087',cs:400,lot:'L1',exp:'',label:[f]}]}))",fid)
     ok("staff 3PL receipt saves without expiry or load photo", isinstance(rr,dict) and rr.get("ok"), rr)
+    # one item in two lots (e.g. PO 42831: 1,120 cs of lot 29 + 80 cs of lot 30)
+    fid=await hub.evaluate("new Promise(r=>google.script.run.withSuccessHandler(x=>r(x.fid)).hubUpload({name:'rr2.jpg',type:'image/jpeg',data:'/9j/4AAQSkZJRgABAQ'}))")
+    fid2=await hub.evaluate("new Promise(r=>google.script.run.withSuccessHandler(x=>r(x.fid)).hubUpload({name:'lbl2.jpg',type:'image/jpeg',data:'/9j/4AAQSkZJRgABAQ'}))")
+    bad=await hub.evaluate("f=>new Promise(r=>google.script.run.withSuccessHandler(x=>r(x)).withFailureHandler(e=>r({err:e.message})).hubAction('90204|10711','receive',{recv:'2026-11-23',plt:17,cond:'Good',load:[],doc:[f],lines:[{id:'90204|10711',cs:1299,lot:'',exp:'',lots:[{lot:'29',exp:'',cs:1200,plt:14},{lot:'30',exp:'',cs:80,plt:3}],label:[f]}]}))",fid)
+    ok("lots must add up to the cases counted", "add up to 1280" in bad.get("err",""), bad)
+    lr=await hub.evaluate("f=>new Promise(r=>google.script.run.withSuccessHandler(x=>r(x)).withFailureHandler(e=>r({err:e.message})).hubAction('90204|10711','receive',{recv:'2026-11-23',plt:17,cond:'Good',load:[],doc:[f],lines:[{id:'90204|10711',cs:1299,lot:'',exp:'',lots:[{lot:'29',exp:'',cs:1219,plt:14},{lot:'30',exp:'2028-01-01',cs:80,plt:3}],label:[g]}]}))".replace("f=>","([f,g])=>"),[fid,fid2])
+    db=await hub.evaluate("MOCK().MOCK_DB()")
+    sub=[x for x in db["Submissions"] if x["id"]=="90204|10711"]
     dr=await hub.evaluate("MOCK().MOCK_DRAFTS||[]")
+    ok("one item saved with two lots", lr.get("ok") and sub and sub[-1]["lot"]=="29 / 30" and len(sub[-1]["lotsJson"])==2 and sub[-1]["exp"]=="2028-01-01", [lr, sub[-1] if sub else None])
+    ok("receiving email has one row per lot", dr and ">29<" in dr[-1]["html"] and ">30<" in dr[-1]["html"] and ">1219<" in dr[-1]["html"] and ">80<" in dr[-1]["html"], dr[-1]["subj"] if dr else None)
+    dr=[d for d in await hub.evaluate("MOCK().MOCK_DRAFTS||[]") if "90102" in d["subj"]]
     ok("Gmail draft made for the receiving team", rr.get("draft") and dr and dr[-1]["subj"]=="PO 90102 – Receiving Documents from TP" and "hbreception@tootsi.com" in dr[-1]["to"] and "L1" in dr[-1]["html"] and ">20<" in dr[-1]["html"] and "40th-SIGNATURE-HORI_02.png" in dr[-1]["html"] and "Inventory Control Specialist" in dr[-1]["html"], [rr.get("draft"), rr.get("draftErr"), dr[-1]["subj"] if dr else None])
 
     await hub.screenshot(path="/tmp/gws_hub.png")

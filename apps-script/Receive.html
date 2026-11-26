@@ -6,11 +6,11 @@
 Object.assign(L.en,{it_h:"Items in this shipment",it_n:"items",it_cs:"Cases",it_lb:"lb (optional)",it_lbl:"Label photo",it_lot:"Lot",it_exp:"Expiry",it_zero:"0 cases: this item did not come (no label needed).",
  sh_plt:"Total pallets in the shipment",s2pm:"Count the pallets for the whole shipment, then the cases of each item.",s2rpm:"These numbers are different from the PO. Count them again:",
  limit:"The count still does not match. Explain the difference below, then send.",up_wait:"Uploading photos…",up_err:"A photo did not upload. Add it again.",s3m:"For each item that came: a clear photo of the label, the lot and the expiry date.",
- m3m:"label photo, lot and expiry for each item",off_plt:"Total pallets",ok_line:"matches",cnt_first:"first count"});
+ m3m:"label photo, lot and expiry for each item",lot_add:"+ Add another lot for this item",lot_n:"Lot",lot_cs:"Cases",lot_plt:"Pallets (optional)",lot_sum:"Lots add up to",lot_of:"of",lot_rm:"Remove this lot",m3s:"the lots must add up to the cases counted",off_plt:"Total pallets",ok_line:"matches",cnt_first:"first count"});
 Object.assign(L.fr,{it_h:"Articles de cette livraison",it_n:"articles",it_cs:"Caisses",it_lb:"lb (facultatif)",it_lbl:"Photo de l'étiquette",it_lot:"Lot",it_exp:"Expiration",it_zero:"0 caisse : cet article n'est pas arrivé (pas d'étiquette).",
  sh_plt:"Total des palettes de la livraison",s2pm:"Comptez les palettes de toute la livraison, puis les caisses de chaque article.",s2rpm:"Ces chiffres ne correspondent pas à la commande. Recomptez-les :",
  limit:"Le compte ne correspond toujours pas. Expliquez l'écart ci-dessous, puis envoyez.",up_wait:"Envoi des photos…",up_err:"Une photo n'a pas été envoyée. Ajoutez-la de nouveau.",s3m:"Pour chaque article reçu : une photo claire de l'étiquette, le lot et la date d'expiration.",
- m3m:"photo, lot et expiration de chaque article",off_plt:"Total des palettes",ok_line:"correspond",cnt_first:"premier compte"});
+ m3m:"photo, lot et expiration de chaque article",lot_add:"+ Ajouter un autre lot pour cet article",lot_n:"Lot",lot_cs:"Caisses",lot_plt:"Palettes (facultatif)",lot_sum:"Les lots totalisent",lot_of:"sur",lot_rm:"Retirer ce lot",m3s:"les lots doivent totaliser les caisses comptées",off_plt:"Total des palettes",ok_line:"correspond",cnt_first:"premier compte"});
 let form,cur,curLines;
 const DKEY=r=>"rcv_draft_"+r.ship;
 /** The form is kept while the receiver works: closing the screen or reloading the page does not lose counts, lots or uploaded photos. */
@@ -24,18 +24,24 @@ function expOpt(){return !!(RCV.expOpt&&cur&&RCV.expOpt(cur))}
 function openReceive(r){cur=r;curLines=RCV.lines(r);const askP=RCV.askP(r),fresh=RCV.fresh?RCV.fresh(r):askP;
  const old=loadDraft(r,curLines.map(x=>x.id));if(old){form=old;form.askP=askP;form.fresh=fresh;drawReceive();return}
  form={recv:DATA.today,askP,fresh,plt:"",rplt:"",li:{},loadPics:[],doc:[],cond:"",dmgText:"",dmgPics:[],legible:false,stage:"count",checked:false,checkOk:false,off:[],needNote:false,limit:false,diffNote:"",comment:"",banner:false,up:0};
- curLines.forEach(x=>form.li[x.id]={cs:"",lbs:"",rcs:"",rlbs:"",lot:"",exp:"",label:[]});drawReceive()}
+ curLines.forEach(x=>form.li[x.id]={cs:"",lbs:"",rcs:"",rlbs:"",lot:"",exp:"",label:[],lots:[]});drawReceive()}
 const isOff=k=>form.stage==="recount"&&form.off.indexOf(k)>=0;
 /** The count that is checked and sent: recount values replace the first count for the lines that were off. */
 function curCount(){return{plt:form.askP?numv(isOff("pallets")?form.rplt:form.plt):null,lines:curLines.map(x=>{const v=form.li[x.id],o=isOff(x.id);return{id:x.id,cs:numv(o?v.rcs:v.cs),lbs:numv(o?v.rlbs:v.lbs)}})}}
 const came=id=>{const c=curCount().lines.find(z=>z.id===id);return c&&c.cs>0};
+/** one item, several lots */
+const split=v=>v&&Array.isArray(v.lots)&&v.lots.length>=2;
+const lotSum=v=>v.lots.reduce((a,l)=>a+(numv(l.cs)||0),0);
 function steps(){const bad=form.cond&&form.cond!=="Good",c=curCount();
  const nums=(!form.askP||(c.plt!=null&&c.plt>=0))&&c.lines.every(z=>z.cs!=null&&z.cs>=0&&(z.lbs==null||z.lbs>=0)),dateOk=!!form.recv&&form.recv<=DATA.today;
- const labelsOk=curLines.every(x=>{if(!came(x.id))return true;const v=form.li[x.id];return v.label.length>0&&v.lot.trim()&&(expOpt()?(!v.exp||v.exp>form.recv):(v.exp&&v.exp>form.recv))});
- const expErr=curLines.some(x=>{const v=form.li[x.id];return came(x.id)&&v.exp&&v.exp<=form.recv});
+ const expGood=e=>expOpt()?(!e||e>form.recv):(e&&e>form.recv);
+ const lotsOk=x=>{const v=form.li[x.id];if(!split(v))return v.lot.trim()&&expGood(v.exp);const z=c.lines.find(q=>q.id===x.id);return v.lots.every(l=>l.lot.trim()&&expGood(l.exp)&&numv(l.cs)!=null&&numv(l.cs)>=0)&&lotSum(v)===(z?z.cs:null)};
+ const labelsOk=curLines.every(x=>{if(!came(x.id))return true;const v=form.li[x.id];return v.label.length>0&&lotsOk(x)});
+ const sumBad=curLines.some(x=>{const v=form.li[x.id],z=c.lines.find(q=>q.id===x.id);return came(x.id)&&split(v)&&v.lots.every(l=>numv(l.cs)!=null)&&lotSum(v)!==(z?z.cs:null)});
+ const expErr=curLines.some(x=>{const v=form.li[x.id];return came(x.id)&&(split(v)?v.lots.some(l=>l.exp&&l.exp<=form.recv):v.exp&&v.exp<=form.recv)});
  return[{k:"s1",ok:!form.fresh||form.loadPics.length>0,m:"m1"},
   {k:"s2",ok:nums&&dateOk&&form.checked&&(!form.needNote||form.diffNote.trim().length>=10),m:!nums||!dateOk?(form.stage==="recount"?"m2r":"m2"):!form.checked?"m2c":"m2n",err:!dateOk&&form.recv?"e_date":""},
-  {k:"s3",ok:labelsOk&&form.legible,m:"m3m",err:expErr?"e_exp":""},
+  {k:"s3",ok:labelsOk&&form.legible,m:sumBad?"m3s":"m3m",err:expErr?"e_exp":""},
   {k:"s4",ok:form.doc.length>0,m:"m4"},
   {k:"s5",ok:!!form.cond&&(!bad||(form.dmgText.trim().length>=10&&form.dmgPics.length>0)),m:bad?"m5n":"m5"}]}
 function foot(){const f=$("foot");if(!f)return;const s=steps(),n=s.filter(x=>x.ok).length,miss=s.find(x=>!x.ok),onlyCheck=miss&&miss.m==="m2c"&&s.filter(x=>!x.ok).length===1;
@@ -59,11 +65,20 @@ function drawReceive(){
    ${recount&&!o?`<div class="small" style="margin:0">${fmt(v.cs)} ${t("u_cs")}${v.lbs!==""?" · "+fmt(v.lbs)+" "+t("u_lb"):""} · ${t("ok_line")} ✓</div>`
    :`<div class="itin"><div class="unit"><label for="c_${esc(x.id)}">${t("it_cs")}${o?` <span class="small">(${t("cnt_first")}${t("colon")} ${fmt(v.cs)})</span>`:""}</label>${inp("c_"+x.id,o?v.rcs:v.cs)}<i aria-hidden="true">${t("u_cs")}</i></div>
     <div class="unit"><label for="w_${esc(x.id)}">${t("it_lb")}</label>${inp("w_"+x.id,o?v.rlbs:v.lbs,"decimal")}<i aria-hidden="true">${t("u_lb")}</i></div></div>`}</div>`};
+ const lotSumTxt=x=>{const v=form.li[x.id],z=curCount().lines.find(q=>q.id===x.id),a=lotSum(v),b=z?z.cs:null;return `${t("lot_sum")} <b>${fmt(a)}</b> ${t("lot_of")} ${b==null?"—":fmt(b)} ${t("u_cs")} ${b!=null&&a===b?"✓":""}`};
  const lineLabel=x=>{const v=form.li[x.id],z=curCount().lines.find(q=>q.id===x.id);if(z&&z.cs===0)return `<div class="itrow"><div class="itname"><b class="mono">${esc(x.item)}</b> ${esc(x.desc)}</div><div class="small" style="margin:0">${t("it_zero")}</div></div>`;
   return `<div class="itrow"><div class="itname"><b class="mono">${esc(x.item)}</b> ${esc(x.desc)}</div>
    <label class="drop"><input type="file" accept="image/*" multiple data-lf="${esc(x.id)}">📷 ${t("it_lbl")}</label>${thumbs(v.label)}
-   <div class="row r2" style="margin-top:8px"><div><label for="l_${esc(x.id)}">${t("it_lot")}</label><input class="in" id="l_${esc(x.id)}" value="${esc(v.lot)}" autocapitalize="characters" autocomplete="off"></div>
-   <div><label for="e_${esc(x.id)}">${t("it_exp")}${expOpt()?" (optional)":""}</label><input class="in" id="e_${esc(x.id)}" type="date" value="${esc(v.exp)}"></div></div></div>`};
+   ${split(v)?`${v.lots.map((l,i)=>`<div class="lotrow" style="border:1px solid var(--line,#e5e5e0);border-radius:10px;padding:8px 10px;margin-top:8px">
+     <div style="display:flex;justify-content:space-between;align-items:center"><b class="small" style="margin:0">${t("lot_n")} ${i+1}</b><button type="button" class="btn ghost" data-lrm="${esc(x.id)}" data-i="${i}" style="min-height:30px;padding:2px 10px" aria-label="${esc(t("lot_rm"))} ${i+1}">✕</button></div>
+     <div class="row r2"><div><label for="ll_${esc(x.id)}_${i}">${t("it_lot")}</label><input class="in" id="ll_${esc(x.id)}_${i}" data-lk="lot" data-lid="${esc(x.id)}" data-i="${i}" value="${esc(l.lot)}" autocapitalize="characters" autocomplete="off"></div>
+     <div><label for="le_${esc(x.id)}_${i}">${t("it_exp")}${expOpt()?" (optional)":""}</label><input class="in" id="le_${esc(x.id)}_${i}" type="date" data-lk="exp" data-lid="${esc(x.id)}" data-i="${i}" value="${esc(l.exp)}"></div></div>
+     <div class="row r2"><div><label for="lc_${esc(x.id)}_${i}">${t("lot_cs")}</label><input class="in" id="lc_${esc(x.id)}_${i}" inputmode="numeric" data-lk="cs" data-lid="${esc(x.id)}" data-i="${i}" value="${esc(l.cs)}"></div>
+     <div><label for="lp_${esc(x.id)}_${i}">${t("lot_plt")}</label><input class="in" id="lp_${esc(x.id)}_${i}" inputmode="numeric" data-lk="plt" data-lid="${esc(x.id)}" data-i="${i}" value="${esc(l.plt)}"></div></div></div>`).join("")}
+     <p class="small" id="ls_${esc(x.id)}" style="margin:6px 0">${lotSumTxt(x)}</p>`
+   :`<div class="row r2" style="margin-top:8px"><div><label for="l_${esc(x.id)}">${t("it_lot")}</label><input class="in" id="l_${esc(x.id)}" value="${esc(v.lot)}" autocapitalize="characters" autocomplete="off"></div>
+   <div><label for="e_${esc(x.id)}">${t("it_exp")}${expOpt()?" (optional)":""}</label><input class="in" id="e_${esc(x.id)}" type="date" value="${esc(v.exp)}"></div></div>`}
+   <button type="button" class="btn ghost" data-ladd="${esc(x.id)}" style="margin-top:8px;min-height:34px">${t("lot_add")}</button></div>`};
  openD(`<div class="dh"><button type="button" class="close" id="x" aria-label="${esc(t("close"))}">×</button><div class="dsub">${RCV.title||t("r_for")}</div>
   <h2 class="mono" id="dtitle" tabindex="-1">${r.cntr?esc(r.cntr):"PO "+esc(pos)}</h2><div>${r.cntr?"PO "+esc(pos)+" · ":""}${many?curLines.length+" "+t("it_n"):esc(r.item)+" · "+esc(r.desc)}</div>
   <div class="dsub" style="margin-top:4px">${esc(loadTxt(r.load))}${form.askP&&r.shipPlt!=null&&r.shipPlt!==""?" · "+fmt(r.shipPlt)+" "+t("pallets"):""} · ${t("expected")} ${fd(r.eta)}</div></div>
@@ -101,6 +116,9 @@ function drawReceive(){
  $("f_leg").onchange=e=>{form.legible=e.target.checked;foot()};
  document.querySelectorAll("[data-f]").forEach(i=>i.onchange=()=>addFiles([...i.files],form[i.dataset.f]));
  document.querySelectorAll("[data-lf]").forEach(i=>i.onchange=()=>addFiles([...i.files],form.li[i.dataset.lf].label));
+ document.querySelectorAll("[data-ladd]").forEach(b=>b.onclick=()=>{const v=form.li[b.dataset.ladd];if(!split(v))v.lots=[{lot:v.lot,exp:v.exp,cs:"",plt:""}];v.lots.push({lot:"",exp:"",cs:"",plt:""});saveDraft();rd();const n=document.querySelector(`[data-lid="${b.dataset.ladd}"][data-i="${v.lots.length-1}"][data-lk="lot"]`);if(n)n.focus()});
+ document.querySelectorAll("[data-lrm]").forEach(b=>b.onclick=()=>{const v=form.li[b.dataset.lrm];v.lots.splice(+b.dataset.i,1);if(v.lots.length<2){const l=v.lots[0]||{lot:"",exp:""};v.lot=l.lot;v.exp=l.exp;v.lots=[]}saveDraft();rd()});
+ document.querySelectorAll("[data-lk]").forEach(el=>el.oninput=e=>{const v=form.li[el.dataset.lid];v.lots[+el.dataset.i][el.dataset.lk]=e.target.value;const st=$("ls_"+el.dataset.lid);if(st)st.innerHTML=lotSumTxt({id:el.dataset.lid});foot();saveDraft()});
  document.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{form.cond=b.dataset.c;rd()});
  const rs=$("rslip");if(rs)rs.onclick=async()=>{busy(true);try{openFile(await RCV.slip(curLines.find(x=>x.slip)),t("open"))}catch(e){toast(e.message)}busy(false)};
  const ck=$("chk");if(ck){ck.onmousedown=e=>e.preventDefault();ck.onclick=()=>runCheck(false)}
@@ -120,7 +138,7 @@ async function submit(){
  const s=steps();if(s.some(x=>!x.ok)){foot();$("st_"+s.find(x=>!x.ok).k).scrollIntoView({behavior:"smooth",block:"start"});return}
  const c=curCount(),ids=a=>a.filter(f=>f.fid).map(f=>f.fid);
  const payload={recv:form.recv,plt:c.plt,diffNote:form.diffNote,cond:form.cond,dmgText:form.dmgText,comment:form.comment,load:ids(form.loadPics),doc:ids(form.doc),dmg:ids(form.dmgPics),
-  lines:c.lines.map(z=>{const v=form.li[z.id];return{id:z.id,cs:z.cs,lbs:z.lbs,lot:came(z.id)?v.lot:"",exp:came(z.id)?v.exp:"",label:came(z.id)?ids(v.label):[]}})};
+  lines:c.lines.map(z=>{const v=form.li[z.id],sp=came(z.id)&&split(v);return{id:z.id,cs:z.cs,lbs:z.lbs,lot:came(z.id)&&!sp?v.lot:"",exp:came(z.id)&&!sp?v.exp:"",lots:sp?v.lots.map(l=>({lot:l.lot.trim(),exp:l.exp,cs:numv(l.cs),plt:numv(l.plt)})):undefined,label:came(z.id)?ids(v.label):[]}})};
  busy(true);let res;try{res=await RCV.submit(cur,payload)}catch(e){busy(false);
   // a lost answer: the receipt may already be saved. Reload and check before showing an error.
   if(/Already received/.test(e.message)){clearDraft(cur);toast(t("done_h"));closeD();RCV.after(cur,false);return}

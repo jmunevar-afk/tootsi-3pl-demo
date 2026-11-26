@@ -296,7 +296,7 @@ function hubRow(p, st, ctx) {
     closed: p.closed || '', ship: shipKey(p), shipN: shipLines(p, st).length, manual: p.manual || ''
   };
 }
-function subView(s) { return { recv: s.recv, plt: s.plt, cs: s.cs, lbs: s.lbs, by: s.by, at: s.at, first: s.firstJson, diffNote: s.diffNote, lot: s.lot, exp: s.exp, cond: s.cond, damage: truthy(s.damage), dmgText: s.dmgText, comment: s.comment }; }
+function subView(s) { return { recv: s.recv, plt: s.plt, cs: s.cs, lbs: s.lbs, by: s.by, at: s.at, first: s.firstJson, diffNote: s.diffNote, lot: s.lot, exp: s.exp, cond: s.cond, damage: truthy(s.damage), dmgText: s.dmgText, comment: s.comment, lots: s.lotsJson || null }; }
 
 function hubDetail(p, st, ctx) {
   var r = hubRow(p, st, ctx);

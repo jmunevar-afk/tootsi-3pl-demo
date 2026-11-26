@@ -295,6 +295,29 @@ function palletHolder_(lines, st) {
  * Save a shipment receipt. All checks first, then all rows; photos are moved into the PO folder AFTER the lock
  * (see finishMoves_), so a big container never blocks other users and a failure never leaves half a receipt.
  */
+/**
+ * One item can arrive in several lots (e.g. 1,120 cs of lot 29 and 80 cs of lot 30). L.lots = [{lot, exp, cs, plt}], 2 to 20 lots.
+ * The lots must add up to the cases counted for the item. The line keeps "29 / 30" as its lot and the earliest expiry.
+ */
+function lotSplit_(L, x, cs, f, fromReport) {
+  L._lots = null;
+  if (!Array.isArray(L.lots) || L.lots.length < 2) return;
+  if (L.lots.length > 20) throw new Error('At most 20 lots per item.');
+  var seen = {}, sum = 0, out = L.lots.map(function (z) {
+    var lot = String((z && z.lot) || '').trim().slice(0, 60), exp = String((z && z.exp) || ''), c = num(z && z.cs), pl = num(z && z.plt);
+    if (!lot) throw new Error('Enter the lot number of every lot for item ' + x.item + '.');
+    if (seen[lot.toUpperCase()]) throw new Error('Lot ' + lot + ' is listed twice for item ' + x.item + '.');
+    seen[lot.toUpperCase()] = true;
+    if (c == null || c < 0) throw new Error('Enter the cases of lot ' + lot + ' (item ' + x.item + ').');
+    if (pl != null && (pl < 0 || pl > 200)) throw new Error('Check the pallets of lot ' + lot + '.');
+    if (exp ? !(/^\d{4}-\d{2}-\d{2}$/.test(exp) && exp > f.recv && exp <= addDays(f.recv, 3660)) : !fromReport) throw new Error('Lot and expiry are required for item ' + x.item + '. Expiry must be after the date received.');
+    sum += c; return { lot: lot, exp: exp, cs: c, plt: pl == null ? '' : pl };
+  });
+  if (sum !== cs) throw new Error('The lots of item ' + x.item + ' add up to ' + sum + ' cs, but ' + cs + ' cs were counted.');
+  L.lot = out.map(function (z) { return z.lot; }).join(' / ');
+  var exps = out.map(function (z) { return z.exp; }).filter(String).sort(); L.exp = exps.length ? exps[0] : '';
+  L._lots = out;
+}
 function submitShip_(p, st, ctx, f, by, ext, wh) {
   var lines = openLines_(p, st), key = shipKey(p), fromReport = isTPL(p.wh) && wh === 'HUB';
   if (!lines.length) throw new Error('Already received. Contact Tootsi Inventory Control to change it.');
@@ -306,6 +329,7 @@ function submitShip_(p, st, ctx, f, by, ext, wh) {
   lines.forEach(function (x) {
     var L = byId[x.id], cs = num(L.cs), lb = num(L.lbs);
     if (cs == null || cs < 0 || cs > 1000000 || (lb != null && (lb < 0 || lb > 200000))) throw new Error('Enter cases (0 or more) for item ' + x.item + '.');
+    lotSplit_(L, x, cs, f, fromReport);
     var expOk = L.exp ? (/^\d{4}-\d{2}-\d{2}$/.test(String(L.exp)) && L.exp > f.recv && L.exp <= addDays(f.recv, 3660)) : fromReport; // expiry optional when Tootsi types in a 3PL report
     if (cs > 0 && (!String(L.lot || '').trim() || !expOk)) throw new Error('Lot and expiry are required for item ' + x.item + '. Expiry must be after the date received.');
     if (cs > 0 && !(L.label || []).length) throw new Error('Label photo missing for item ' + x.item + '.');
@@ -349,7 +373,7 @@ function submitShip_(p, st, ctx, f, by, ext, wh) {
       plt: isHolder ? num(f.plt) : '', cs: cs, lbs: lb == null ? '' : lb,
       firstJson: first && (lineOff || pOff) ? { plt: pOff ? first.plt : null, cs: fl ? fl.cs : null, lbs: fl ? fl.lbs : null } : null,
       diffNote: (lineOff || pOff) ? note : '', lot: String(L.lot || '').trim().slice(0, 60), exp: L.exp || '', cond: f.cond, damage: bad, dmgText: bad ? String(f.dmgText).trim().slice(0, 1000) : '', comment: comment,
-      filesJson: shared.concat(asFiles(L.label, 'Label photo', x.id)), ship: key, grpPlt: isHolder && multi && r.grp != null ? r.grp : '' });
+      filesJson: shared.concat(asFiles(L.label, 'Label photo', x.id)), ship: key, grpPlt: isHolder && multi && r.grp != null ? r.grp : '', lotsJson: L._lots || null });
     if (st.req[x.id]) { st.req[x.id].active = false; upsert_('Recounts', 'id', st.req[x.id]); }
     if (st.delay[x.id]) { var dl = st.delay[x.id]; dl.closedAt = ctx.stamp; upsert_('Delays', 'delayId', dl); }
     if (!x.qc || x.qc === 'Not received') { x.qc = 'Locked'; x.qcAt = f.recv; savePO_(x, ctx); }
@@ -360,7 +384,9 @@ function submitShip_(p, st, ctx, f, by, ext, wh) {
   queueMaster_(lines, byId, f, isTPL(p.wh) ? p.wh : wh, ctx, holder);
   sync_(loadState_(), ctx);
   var report = fromReport ? { wh: p.wh, plt: askP ? num(f.plt) : null, holder: holder, files: Object.keys(files),
-    rows: lines.map(function (x) { var L = byId[x.id]; return { po: x.po, item: x.item, lot: String(L.lot || '').trim(), cw: caseWeight_(x, L), cs: num(L.cs), holder: x.id === holder }; }) } : null;
+    rows: [].concat.apply([], lines.map(function (x) { var L = byId[x.id], cw = caseWeight_(x, L);
+      if (L._lots) return L._lots.map(function (z) { return { po: x.po, item: x.item, lot: z.lot, cw: cw, cs: z.cs, lotPlt: z.plt, holder: false }; });
+      return [{ po: x.po, item: x.item, lot: String(L.lot || '').trim(), cw: cw, cs: num(L.cs), holder: x.id === holder }]; })) } : null;
   return { ok: true, flagged: !!offAll || bad, n: lines.length, _moves: moves, _report: report };
 }
 
@@ -380,6 +406,13 @@ function queueMaster_(lines, byId, f, wh, ctx, holder) {
   lines.forEach(function (x) {
     var L = byId[x.id], cs = num(L.cs); if (!(cs > 0)) return;
     var cw = caseWeight_(x, L), lot = String(L.lot || '').trim();
+    if (L._lots) {
+      var vl = { item: x.item, desc: x.desc, recv: f.recv, docs: docs };
+      Object.keys(vl).forEach(function (k) { upsertWhere_('MasterSync', function (r) { return r.key === x.id + '|' + k; }, { key: x.id + '|' + k, at: ctx.stamp, po: x.po, item: x.item, wh: wh, field: k, value: String(vl[k]), status: 'pending', row: '' }); });
+      upsertWhere_('MasterSync', function (r) { return r.key === x.id + '|lots'; }, { key: x.id + '|lots', at: ctx.stamp, po: x.po, item: x.item, wh: wh, field: 'lots', value: L._lots.map(function (z) { return z.lot + ': ' + z.cs + ' cs' + (z.plt !== '' ? ' / ' + z.plt + ' plt' : '') + (z.exp ? ' exp ' + z.exp : ''); }).join(' | '),
+        status: 'fill by hand: ' + L._lots.length + ' lots = ' + L._lots.length + ' master rows', row: '' });
+      return;
+    }
     var vals = { item: x.item, desc: x.desc, recv: f.recv, exp: L.exp, units: cs, docs: docs,
       plt: x.id === holder && num(f.plt) != null ? num(f.plt) : '',
       ext: lot && cw ? x.item + ' #' + lot + '#' + x.po + '#' + cw : '' };
@@ -635,7 +668,7 @@ function receiptDraft_(r) {
   var th = 'border:1px solid #000;background:#ead1dc;font-weight:bold;text-align:center;padding:3px 10px;font-family:Arial;font-size:11pt';
   var td = 'border:1px solid #000;text-align:center;padding:3px 10px;font-family:Calibri,Arial;font-size:11pt';
   var head = ['3PL', 'Product', 'PO', 'Lot', 'Weight (LB)', 'No. Pallets', 'No. Units'];
-  var body = rows.map(function (x) { return [r.wh, x.item, x.po, x.lot, x.cw, x.holder && r.plt != null ? r.plt : (rows.length === 1 && r.plt != null ? r.plt : ''), x.cs]; });
+  var body = rows.map(function (x) { return [r.wh, x.item, x.po, x.lot, x.cw, x.lotPlt !== undefined ? x.lotPlt : x.holder && r.plt != null ? r.plt : (rows.length === 1 && r.plt != null ? r.plt : ''), x.cs]; });
   var intro = 'Hi Receiving Team,<br><br>The inventory detailed below has been received from ' + e(r.wh) + '.<br>Please update the system as soon as possible with this information.<br><br>' +
     'Additionally, please attach the enclosed receiving documents and pictures to the relevant PO, and forward them to QC for review and approval.<br><br>';
   var table = '<table style="border-collapse:collapse"><tr>' + head.map(function (h) { return '<th style="' + th + '">' + h + '</th>'; }).join('') + '</tr>' +
