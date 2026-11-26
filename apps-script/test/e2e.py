@@ -263,6 +263,7 @@ async def main():
     await pg.goto(P+"3pl.html"); await pg.wait_for_timeout(600)
     await pg.screenshot(path="/tmp/gws_login.png")
     await b.close()
+    ok("no page errors in any page", not errs, errs)
     print("ERRORS:",errs)
     print(f"{sum(x for _,x in R)}/{len(R)} passed")
 asyncio.run(main())

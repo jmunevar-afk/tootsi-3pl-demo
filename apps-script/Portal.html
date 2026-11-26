@@ -97,7 +97,7 @@ function render(){
    <div class="m">${r.cntr&&!r.sent?"PO "+esc((r.pos||[r.po]).join(", "))+" · ":""}${many?`<b>${r.lines.length} ${t("it_n")}</b> · `:esc(r.item)+" "}${esc(names.slice(0,many?3:1).join(" · "))}${many&&names.length>3?" · +"+(names.length-3):""}</div>
    <div class="m">${r.shipPlt!=null&&r.shipPlt!==""?fmt(r.shipPlt)+" "+t("pallets")+" · ":""}${esc(loadTxt(r.load))} · ${t("expected")}${t("colon")} <b style="color:var(--ink)">${fd(r.eta)}</b></div>
    ${!r.sent?`<div style="margin-top:6px">${slaPill(r)}</div>`:""}${r.delay?`<div class="m" style="color:#5b3a91;margin-top:4px">⏸ ${esc(t(r.delay.reason))}${r.delay.newDate?" · "+t("d_new")+t("colon")+" "+fds(r.delay.newDate):""}</div>`:""}</div>
-   ${r.sent?`<span class="pill ${r.sent.damage?"p-dmg":"p-done"}">${r.sent.damage?t("sent_issue"):t("sent")}</span>`:`<span class="go">${r.req?t("recount_req"):t("receive")} →</span>`}</button>
+   ${r.sent?`<span class="pill ${r.sent.damage?"p-dmg":"p-done"}">${r.sent.byTootsi?t("by_tootsi"):r.sent.damage?t("sent_issue"):t("sent")}</span>`:`<span class="go">${r.req?t("recount_req"):t("receive")} →</span>`}</button>
    ${!r.sent?`<div style="display:flex">${(r.lines||[r]).some(x=>x.slip)?`<button type="button" class="delaybtn" style="flex:1;color:var(--ink)" data-slip="${esc((r.lines||[r]).find(x=>x.slip).id)}">📄 ${t("slip")}</button>`:""}<button type="button" class="delaybtn" style="flex:1" data-delay="${esc(r.id)}">${r.delay?t("d_solve"):t("delay_btn")}</button></div>`:""}</div>`};
  const grp=(title,arr,color)=>arr.length?`<div class="group" ${color?`style="color:${color}"`:""}>${title}</div>${arr.map(card).join("")}`:"";
  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);

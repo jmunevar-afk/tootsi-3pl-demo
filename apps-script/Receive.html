@@ -92,7 +92,7 @@ function drawReceive(){
     <textarea id="f_com" rows="3" maxlength="500" placeholder="${esc(t("com_ph"))}">${esc(form.comment)}</textarea></div>
   </div></div><div class="foot" id="foot"></div>`);
  $("drawer").scrollTop=y;foot();saveDraft();
- const rd=()=>drawReceive(),reset=()=>{if(form.checked&&!form.limit){form.checked=form.checkOk=form.needNote=false;rd();return true}return false};
+ const rd=()=>drawReceive(),reset=()=>{if(form.checked&&(!form.limit||(RCV.expOpt&&RCV.expOpt(cur)))){form.checked=form.checkOk=form.needNote=false;rd();return true}return false};
  const bindNum=(id,set)=>{const el=$(id);if(el)el.oninput=e=>{set(e.target.value);if(reset())return;foot();saveDraft()}};
  bindNum("f_plt",v=>form.plt=v);bindNum("f_rplt",v=>form.rplt=v);
  curLines.forEach(x=>{const v=form.li[x.id],o=isOff(x.id);bindNum("c_"+x.id,z=>o?v.rcs=z:v.cs=z);bindNum("w_"+x.id,z=>o?v.rlbs=z:v.lbs=z);

@@ -59,7 +59,7 @@ function importUpcoming_() {
       var manual = String(p.manual || '').split(',').filter(String), diff = [], drop = [];
       ['eta', 'wh', 'cntr', 'plt', 'lbs', 'load'].forEach(function (k) {
         var nv = L[k] == null ? '' : L[k], ov = p[k] == null ? '' : p[k];
-        if (manual.indexOf(k) >= 0 || nv === '') return; // changed by hand in the hub
+        if (manual.indexOf(k) >= 0 || manual.indexOf(k + '@sap') >= 0 || nv === '') return; // changed by hand in the hub (or an old v19 SAP marker)
         // the SAP report replaced the sheet value: keep SAP's value while the sheet still shows the old one; once the sheet changes, the sheet wins
         var mk = manual.filter(function (m) { return m.indexOf(k + '@sheet=') === 0; })[0];
         if (mk) { if (String(nv).replace(/,/g, ' ') === mk.slice((k + '@sheet=').length)) return; drop.push(mk); }
@@ -104,13 +104,14 @@ function importSapReport_() {
   var threads = GmailApp.search(q, 0, 10), msgs = [];
   var sender = String(cfg.SAP_REPORT_FROM || 'sap@tootsi.com').toLowerCase();
   threads.forEach(function (t) { t.getMessages().forEach(function (m) {
-    var from = String(m.getFrom() || '').toLowerCase(), addr = (from.match(/<([^>]+)>/) || [, from])[1].trim();
+    var from = String(m.getFrom() || '').toLowerCase(), addr = (from.match(/<([^<>]+)>\s*$/) || [, /[<>\s]/.test(from.trim()) ? '' : from])[1].trim();
     if (addr === sender && /Upcoming Deliveries to Tootsi/i.test(m.getSubject())) msgs.push(m); // only the SAP server itself, not a forward or a look-alike
   }); });
   if (!msgs.length) return 'no report';
   msgs.sort(function (a, b) { return b.getDate() - a.getDate(); });
   var msg = msgs[0], props = PropertiesService.getScriptProperties();
   var when = Utilities.formatDate(msg.getDate(), 'America/Toronto', 'yyyy-MM-dd HH:mm'), label = (String(msg.getSubject()).match(/\(([^)]+)\)/) || [, ''])[1];
+  if (props.getProperty('SAP_REPORT_AT') === when && String(cfg.SAP_REAPPLY || 'no') !== 'yes') return { lines: 0, added: 0, updated: 0, report: when, skipped: 'already applied' }; // each report is applied once
   var body = msg.getBody(), rows = parseSapReport_(body);
   if (!rows.length && !/PO#/i.test(body)) throw new Error('SAP report of ' + when + ': no table found.');
   var res = applySapRows_(rows, when, label);
@@ -135,7 +136,7 @@ function parseSapReport_(html) {
     var load = size ? (size === 'FCL' ? 'FCL ' + csize : size) + ' · ' + (size === 'FCL' && !pal ? 'Floor loaded' : 'Palletized') : '';
     return { po: normPO(o['po#']), item: dash(o['item code']), supplier: dash(o['name']), desc: dash(o['item description']),
       cs: n(o['item quantity']), lbs: n(o['item total weight(lb)']), plt: n(o['#skid']), load: load.replace(/\s+/g, ' ').trim(),
-      cntr: dash(o['cntr/tracknum']).toUpperCase(), wh: dash(o['whs']).toUpperCase(), eta: d ? d[3] + '-' + ('0' + d[2]).slice(-2) + '-' + ('0' + d[1]).slice(-2) : '' };
+      cntr: dash(o['cntr/tracknum']).toUpperCase(), wh: dash(o['whs']).toUpperCase(), eta: d && +d[1] >= 1 && +d[1] <= 31 && +d[2] >= 1 && +d[2] <= 12 ? d[3] + '-' + ('0' + d[2]).slice(-2) + '-' + ('0' + d[1]).slice(-2) : '' };
   }).filter(function (r) { return /^\d{3,10}(-\d+)?$/.test(r.po) && r.item; });
 }
 function applySapRows_(rows, when, label) {
@@ -150,6 +151,7 @@ function applySapRows_(rows, when, label) {
       if (!p) {
         var np = { id: id, po: r.po, item: r.item, wh: wh, desc: r.desc, supplier: r.supplier, eta: r.eta, cntr: r.cntr, plt: r.plt == null ? '' : r.plt,
           cs: r.cs == null ? '' : r.cs, lbs: r.lbs ? r.lbs : '', load: r.load, qc: 'Not received', source: 'sap', addedBy: 'SAP report' };
+        np.manual = ['wh', 'eta', 'cntr', 'plt', 'lbs', 'load'].filter(function (k) { return np[k] !== '' && np[k] != null; }).map(function (k) { return k + '@sheet='; }).join(',');
         append_('POs', np); have[id] = np; added++;
         (notesByPO[r.po] = notesByPO[r.po] || { id: id, d: {} }).d['added from the SAP report (' + (r.load || 'delivery') + ', ' + (wh || 'no WHS') + ')'] = true;
         return;

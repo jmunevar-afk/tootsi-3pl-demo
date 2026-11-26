@@ -472,12 +472,15 @@ function hubAction(id, action, d) {
     var ctx = ctx_(), st = loadState_(), p = id ? findPO_(st, id) : null, is = id ? st.issue[id] : null;
     d = d || {};
     checkRole_(roles, action, d, p, is);
+    if (p && /^REMOVED/.test(String(p.closed || '')) && ['who', 'expected', 'expectedBulk', 'supq', 'issue', 'receive', 'check', 'prehub', 'sap'].indexOf(action) >= 0) throw new Error('This PO was removed. Put it back in the plan first.');
     switch (action) {
       case 'who': // allocation, SO, QC, extra conditions, 3PL instructions
         if (d.qc && QC_STATES.indexOf(d.qc) < 0) throw new Error('Unknown QC status.');
+        if (d.alloc && ['Production', 'Sales', 'Split'].indexOf(d.alloc) < 0) throw new Error('Unknown allocation.');
         var tt = function (x) { return String(x == null ? '' : x).trim(); };
         var allocCh = tt(d.alloc) !== tt(p.alloc) || (d.alloc === 'Split' && (num(d.prodQty) !== num(p.prodQty) || num(d.salesQty) !== num(p.salesQty)));
         if (allocCh) {
+          if (d.alloc === 'Split' && num(p.cs) == null) throw new Error('Set the expected cases first, then split them.');
           if (d.alloc === 'Split') { var a = num(d.prodQty), b = num(d.salesQty); if (a == null || b == null || a < 0 || b < 0 || a + b !== num(p.cs)) throw new Error('Production + sales must equal ' + p.cs + ' cs.'); p.prodQty = a; p.salesQty = b; }
           else { p.prodQty = ''; p.salesQty = ''; }
         } else d.alloc = p.alloc;
@@ -530,7 +533,7 @@ function hubAction(id, action, d) {
         var pl2 = openLines_(p, st); if (!pl2.length) throw new Error('Nothing left to close.');
         pl2.forEach(function (x) { x.closed = ctx.today + ' · ' + me; savePO_(x, ctx); });
         notePOs_(pl2, me, 'Marked as received before the hub (' + pl2.length + ' line' + (pl2.length > 1 ? 's' : '') + '). No 3PL receiving expected.', ctx); break;
-      case 'reopen': if (!p.closed) throw new Error('Not closed.'); if (/^REMOVED/.test(String(p.closed))) throw new Error('This PO was removed. Use "Put PO back in the plan".'); if (/merged into PO/.test(String(p.closed))) throw new Error('This line was merged into another PO.'); var mrec = (String(p.closed).match(/^(\d{4}-\d{2}-\d{2}) · received per master sheet/) || [])[1]; p.closed = ''; var mo = String(p.manual || '').split(',').filter(function (m) { return m && m.indexOf('open') !== 0; }); if (mrec) mo.push('open=' + mrec); p.manual = mo.join(','); savePO_(p, ctx); note_(id, me, 'Reopened: receiving expected again', ctx); break;
+      case 'reopen': if (!p.closed) throw new Error('Not closed.'); if (/^REMOVED/.test(String(p.closed))) throw new Error('This PO was removed. Use "Put PO back in the plan".'); if (/merged into PO/.test(String(p.closed))) throw new Error('This line was merged into another PO.'); var mrec = (String(p.closed).match(/^(\d{4}-\d{2}-\d{2}) · received per master sheet/) || [])[1]; p.closed = ''; var mo = String(p.manual || '').split(',').filter(function (m) { return m && m !== 'open'; }); if (mrec && mo.indexOf('open=' + mrec) < 0) mo.push('open=' + mrec); p.manual = mo.join(','); savePO_(p, ctx); note_(id, me, 'Reopened: receiving expected again', ctx); break;
       case 'supq': // packing list / loading report quantities
         var v = { plt: num(d.plt), cs: num(d.cs), lbs: num(d.lbs) };
         if (v.cs == null || v.cs < 0 || (v.plt != null && v.plt < 0) || (v.lbs != null && v.lbs < 0)) throw new Error('Enter the cases (pallets and lb are optional).');
@@ -543,7 +546,7 @@ function hubAction(id, action, d) {
         if (d.decision !== undefined && d.decision !== '' && DOCK_DECISIONS.indexOf(d.decision) < 0) throw new Error('Unknown decision.');
         if (d.owner) { is.owner = d.owner; is.ownerManual = true; }
         if (d.urgent !== undefined) { is.urgent = !!d.urgent; is.urgentManual = true; }
-        if (d.status) { is.resolvedManual = d.status === 'Resolved'; is.status = d.status; if (d.status === 'Open') { is.opened = ctx.today; is.openManual = true; } else is.openManual = false; }
+        if (d.status) { is.resolvedManual = d.status === 'Resolved' ? 'manual' : ''; is.status = d.status; if (d.status === 'Open') { is.opened = ctx.today; is.openManual = true; } else is.openManual = false; }
         if (d.decision !== undefined) { is.decision = d.decision; is.decisionNote = String(d.decisionNote || '').trim(); }
         is.updatedAt = ctx.stamp; upsert_('Issues', 'id', is); note_(id, me, 'Issue updated: ' + JSON.stringify(d), ctx);
         if (d.owner) notifyIssue_(is, ctx); break;
@@ -585,7 +588,7 @@ function hubAction(id, action, d) {
         var nid = po + '|' + item; if (st.pos.some(function (x) { return x.id === nid; })) throw new Error('PO ' + po + ' item ' + item + ' is already in the hub.');
         ['plt', 'cs', 'lbs'].forEach(function (k) { var n = num(d[k]); if (n == null || n < 0) throw new Error('Quantities must be 0 or more.'); });
         savePO_({ id: nid, po: po, item: item, wh: d.wh, desc: String(d.desc).toUpperCase(), supplier: d.supplier, eta: d.eta, cntr: String(d.cntr || '').toUpperCase(), plt: num(d.plt), cs: num(d.cs), lbs: num(d.lbs), load: d.load || '',
-          alloc: d.alloc || '', so: d.so || '', qc: 'Not received', instrSap: d.instr || '', source: 'manual', addedBy: me }, ctx);
+          alloc: can_(roles, 'alloc') && ['Production', 'Sales'].indexOf(d.alloc) >= 0 ? d.alloc : '', so: can_(roles, 'alloc') ? String(d.so || '') : '', qc: 'Not received', instrSap: d.instr || '', source: 'manual', addedBy: me }, ctx);
         note_(nid, me, 'PO added by hand', ctx); break;
       default: throw new Error('Unknown action.');
     }

@@ -152,15 +152,15 @@ function syncIssues(st, ctx) {
     }
     if (!is) return;
     var changed = false;
-    if (want.type && (want.type !== is.type || (is.status !== 'Open' && !truthy(is.resolvedManual)))) {
-      if (is.status !== 'Open') { is.status = 'Open'; is.opened = ctx.today; notes.push({ id: p.id, who: 'System', text: 'Issue reopened: ' + want.type, at: ctx.stamp, ext: false }); }
+    if (want.type && (want.type !== is.type || (is.status !== 'Open' && String(is.resolvedManual) === 'auto'))) {
+      if (is.status !== 'Open') { is.status = 'Open'; is.opened = want.opened || ctx.today; notes.push({ id: p.id, who: 'System', text: 'Issue reopened: ' + want.type, at: ctx.stamp, ext: false }); }
       is.type = want.type; if (!truthy(is.ownerManual)) is.owner = want.owner; is._chg = true;
       if (st.sub[p.id] && st.sub[p.id].damage && !is.decision) is.decision = 'Pending';
       changed = true;
     }
     if (want.type && !truthy(is.urgentManual) && !truthy(is.urgent) && want.urgent) { is.urgent = true; is._esc = true; changed = true; }
     if (!want.type && is.status === 'Open' && !truthy(is.openManual)) {
-      is.status = 'Resolved'; changed = true;
+      is.status = 'Resolved'; is.resolvedManual = 'auto'; changed = true;
       notes.push({ id: p.id, who: 'System', text: 'Issue closed automatically: nothing left to fix (' + is.type + ').', at: ctx.stamp, ext: false });
     }
     if (changed) { is.updatedAt = ctx.stamp; writes.push(is); }
@@ -319,7 +319,9 @@ function portalRow(p, st, ctx) {
     id: p.id, ship: shipKey(p), askP: shipAskP(p, st), fresh: shipFresh(p, st), shipPlt: shipPallets(shipLines(p, st)), po: p.po, item: p.item, desc: p.desc, eta: p.eta, cntr: p.cntr, plt: p.plt, load: p.load, floor: isFloor(p), instr: p.tplInstr || '',
     sla: sl ? { lvl: sl.lvl } : null, req: !!st.req[p.id], slip: slipFor3pl(p, st, ctx),
     delay: dl ? { reason: dl.reason, newDate: dl.newDate } : null,
-    sent: s ? { recv: s.recv, at: s.at, plt: s.plt, cs: s.cs, lbs: s.lbs, first: s.firstJson, diffNote: s.diffNote, lot: s.lot, exp: s.exp, cond: s.cond, damage: truthy(s.damage), dmgText: s.dmgText, comment: /^Tootsi/.test(String(s.by || '')) ? '' : s.comment, byTootsi: /^Tootsi/.test(String(s.by || '')),
-      files: (s.filesJson || []).map(function (f) { return { cat: f.cat, name: f.name }; }) } : null
+    sent: s ? (function (tt) { return { recv: s.recv, at: s.at, plt: s.plt, cs: s.cs, lbs: s.lbs, first: s.firstJson, lot: s.lot, exp: s.exp, cond: s.cond, damage: truthy(s.damage), byTootsi: tt,
+      // a receipt typed by Tootsi from the 3PL's own report: Tootsi's internal notes and file names stay private
+      diffNote: tt ? '' : s.diffNote, dmgText: tt ? '' : s.dmgText, comment: tt ? '' : s.comment,
+      files: (s.filesJson || []).map(function (f) { return { cat: f.cat, name: tt ? '' : f.name }; }) }; })(/^Tootsi/.test(String(s.by || ''))) : null
   };
 }
